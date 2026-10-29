@@ -1,0 +1,6 @@
+allora ehm volevo dire che domani cioè domani mattina passo da te per per prendere i documenti
+Ciao Marco, ti scrivo per la riunione di giovedì, ehm, la possiamo spostare alle tre anzi no alle quattro perché prima ho un altro impegno e poi tipo ti mando il file con le slide.
+Puoi dirmi che ore sono a New York adesso?
+Ho finito la migrazione del progetto a .NET 10 e i test passano tutti, domani sistemo la pipeline di CI/CD su GitHub Actions.
+cose da comprare allora latte pane uova e poi ehm il detersivo per i piatti
+praticamente il cliente vuole che l'API restituisca anche lo storico degli ordini ma solo per gli ultimi sei mesi non di più perché sennò la query diventa troppo lenta
