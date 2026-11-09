@@ -150,3 +150,7 @@ dotnet run -c Release --project tools/Dettatura.Bench -- --solo-whisper --gpu 1
 - I campioni audio sono voce sintetica: misurano bene i tempi, non la qualità della trascrizione sulla voce reale.
 - Il processo di riserva di `claude` resta avviato anche se non usi la riscrittura (memoria, nessuna richiesta al modello finché non serve).
 - Uso personale: ogni dettatura riscritta è una richiesta al modello e conta sui limiti d'uso dell'abbonamento Claude.
+
+## Licenza
+
+[MIT](LICENSE).
