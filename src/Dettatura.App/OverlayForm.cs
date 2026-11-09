@@ -1,7 +1,9 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using Dettatura.Core.Transcription;
+using static Dettatura.App.Theme;
 
 namespace Dettatura.App;
 
@@ -12,66 +14,69 @@ namespace Dettatura.App;
 /// </summary>
 internal sealed partial class OverlayForm : Form
 {
-    private static readonly Color Background = Color.FromArgb(30, 30, 34);
-    private static readonly Color TextColor = Color.FromArgb(236, 236, 240);
-    private static readonly Color MutedColor = Color.FromArgb(150, 150, 160);
-    private static readonly Color BoxColor = Color.FromArgb(44, 44, 50);
-    private static readonly Color Red = Color.FromArgb(232, 64, 64);
-    private static readonly Color Orange = Color.FromArgb(240, 165, 30);
-    private static readonly Color Green = Color.FromArgb(70, 190, 110);
-
     private const int ResultSeconds = 10;
     private const int MessageSeconds = 6;
     private const int SilenceWarningMs = 1500;
 
-    private readonly Dot _dot = new();
+    private readonly PulseDot _dot = new();
     private readonly Label _title = new();
     private readonly Label _detail = new();
-    private readonly LevelBar _level = new();
+    private readonly Waveform _wave = new();
+    private readonly Panel _textFrame = new();
     private readonly TextBox _text = new();
-    private readonly Button _copy;
-    private readonly Button _close;
-    private readonly System.Windows.Forms.Timer _tick = new() { Interval = 100 };
+    private readonly ModernButton _copy = new("Copia", primary: true);
+    private readonly ModernButton _close = new("Chiudi");
+    private readonly System.Windows.Forms.Timer _tick = new() { Interval = 50 };
     private readonly System.Windows.Forms.Timer _autoHide = new();
     private readonly Stopwatch _elapsed = new();
 
     private Func<float>? _levelSource;
     private float _maxLevel;
     private string _recordingTitle = string.Empty;
+    private Mode _mode;
 
     public OverlayForm()
     {
         FormBorderStyle = FormBorderStyle.None;
         StartPosition = FormStartPosition.Manual;
         ShowInTaskbar = false;
-        BackColor = Background;
-        ForeColor = TextColor;
-        Font = new Font("Segoe UI", 10f);
-        Width = S(460);
+        AutoScaleMode = AutoScaleMode.None;
+        BackColor = Surface;
+        ForeColor = Fore;
+        Font = Body(10f);
+        Width = S(480);
 
-        _dot.SetBounds(S(16), S(17), S(12), S(12));
-        _title.SetBounds(S(36), S(12), S(300), S(22));
-        _title.Font = new Font("Segoe UI Semibold", 10.5f);
-        _detail.SetBounds(S(330), S(13), S(114), S(22));
+        _dot.SetBounds(S(16), S(14), S(20), S(20));
+        _title.SetBounds(S(42), S(12), S(300), S(24));
+        _title.Font = Strong(10.5f);
+        _title.ForeColor = Fore;
+        _detail.SetBounds(S(330), S(14), S(132), S(22));
         _detail.TextAlign = ContentAlignment.TopRight;
-        _detail.ForeColor = MutedColor;
-        _level.SetBounds(S(16), S(44), S(428), S(6));
+        _detail.ForeColor = Muted;
+        _detail.Font = Body(9.5f);
+        _wave.SetBounds(S(18), S(46), S(444), S(30));
 
-        _text.SetBounds(S(16), S(44), S(428), S(84));
+        _textFrame.SetBounds(S(18), S(46), S(444), S(92));
+        _textFrame.BackColor = Surface;
+        _textFrame.Padding = new Padding(S(12), S(10), S(6), S(8));
+        _textFrame.Paint += (_, e) =>
+            FillRounded(e.Graphics, Field, new RectangleF(0.5f, 0.5f, _textFrame.Width - 1.5f, _textFrame.Height - 1.5f), S(8), Border);
+        _text.Dock = DockStyle.Fill;
         _text.Multiline = true;
         _text.ReadOnly = true;
         _text.BorderStyle = BorderStyle.None;
-        _text.BackColor = BoxColor;
-        _text.ForeColor = TextColor;
-        _text.ScrollBars = ScrollBars.Vertical;
+        _text.BackColor = Field;
+        _text.ForeColor = Fore;
+        _text.Font = Body(10f);
+        _text.ScrollBars = ScrollBars.None; // si scorre con la rotellina
         _text.TabStop = false;
+        DarkScrollbars(_text);
+        _textFrame.Controls.Add(_text);
 
-        _copy = MakeButton("Copia", S(268));
         _copy.Click += (_, _) => CopyText();
-        _close = MakeButton("Chiudi", S(360));
         _close.Click += (_, _) => HideNow();
 
-        Controls.AddRange([_dot, _title, _detail, _level, _text, _copy, _close]);
+        Controls.AddRange([_dot, _title, _detail, _wave, _textFrame, _copy, _close]);
 
         _tick.Tick += (_, _) => OnTick();
         _autoHide.Tick += (_, _) =>
@@ -95,18 +100,18 @@ internal sealed partial class OverlayForm : Form
         }
     }
 
-    /// <summary>Registrazione in corso: indicatore di livello e avviso se dal microfono non arriva suono.</summary>
+    /// <summary>Registrazione in corso: forma d'onda del microfono e avviso se non arriva suono.</summary>
     public void ShowRecording(string title, string hint, Func<float> level)
     {
         _recordingTitle = title;
         _levelSource = level;
         _maxLevel = 0;
-        _level.Value = 0;
+        _wave.Reset();
         Present(Red, title, hint, Mode.Recording, autoHideSeconds: 0);
     }
 
     /// <summary>Lavoro in corso (trascrizione, riscrittura): il contatore dei secondi dice che non è bloccata.</summary>
-    public void ShowWorking(string title) => Present(Orange, title, "0,0 s", Mode.Compact, autoHideSeconds: 0);
+    public void ShowWorking(string title) => Present(Orange, title, "0,0 s", Mode.Working, autoHideSeconds: 0);
 
     /// <summary>Testo incollato, con il pulsante per copiarlo di nuovo.</summary>
     public void ShowResult(string title, string detail, string text)
@@ -130,28 +135,31 @@ internal sealed partial class OverlayForm : Form
         Hide();
     }
 
-    private enum Mode { Compact, Recording, Result, Message }
+    private enum Mode { Working, Recording, Result, Message }
 
-    private void Present(Color color, string title, string detail, Mode layout, int autoHideSeconds)
+    private void Present(Color color, string title, string detail, Mode mode, int autoHideSeconds)
     {
+        _mode = mode;
         _dot.Color = color;
+        _dot.Pulsing = mode is Mode.Recording or Mode.Working;
         _title.Text = title;
-        _title.ForeColor = TextColor;
+        _title.ForeColor = Fore;
         _detail.Text = detail;
-        _level.Visible = layout == Mode.Recording;
-        _text.Visible = layout is Mode.Result or Mode.Message;
-        _text.Height = layout == Mode.Message ? S(44) : S(84);
-        _copy.Visible = layout == Mode.Result;
-        _close.Visible = layout is Mode.Result or Mode.Message;
-        if (layout != Mode.Recording) _levelSource = null;
+        _wave.Visible = mode == Mode.Recording;
+        _textFrame.Visible = mode is Mode.Result or Mode.Message;
+        _textFrame.Height = mode == Mode.Message ? S(58) : S(92);
+        _copy.Visible = mode == Mode.Result;
+        _close.Visible = mode is Mode.Result or Mode.Message;
+        if (mode != Mode.Recording) _levelSource = null;
 
-        var buttonsTop = _text.Bottom + S(10);
-        _copy.Top = _close.Top = buttonsTop;
-        Height = layout switch
+        var buttonsTop = _textFrame.Bottom + S(12);
+        _close.Location = new Point(Width - S(18) - _close.Width, buttonsTop);
+        _copy.Location = new Point(_close.Left - S(8) - _copy.Width, buttonsTop);
+        Height = mode switch
         {
-            Mode.Compact => S(46),
-            Mode.Recording => S(64),
-            _ => buttonsTop + _close.Height + S(12),
+            Mode.Working => S(48),
+            Mode.Recording => S(90),
+            _ => buttonsTop + _close.Height + S(16),
         };
 
         var area = Screen.FromPoint(Cursor.Position).WorkingArea;
@@ -174,30 +182,24 @@ internal sealed partial class OverlayForm : Form
 
     private void OnTick()
     {
-        if (_levelSource is not null)
+        _dot.Advance();
+        switch (_mode)
         {
-            var level = _levelSource();
-            _maxLevel = Math.Max(_maxLevel, level);
-            // Radice quadrata: la voce normale (RMS 0,01-0,1) riempie la barra a metà o più.
-            _level.Value = Math.Max(Math.Clamp(MathF.Sqrt(level / 0.15f), 0, 1), _level.Value * 0.85f);
-            if (_elapsed.ElapsedMilliseconds > SilenceWarningMs && _maxLevel < WhisperTranscriber.SilenceRms)
-            {
-                _title.Text = "Nessun suono dal microfono";
-                _title.ForeColor = Orange;
-            }
-            else if (_title.ForeColor == Orange)
-            {
-                _title.Text = _recordingTitle;
-                _title.ForeColor = TextColor;
-            }
-        }
-        else if (_dot.Color == Orange && !_text.Visible)
-        {
-            _detail.Text = $"{_elapsed.Elapsed.TotalSeconds:0.0} s";
-        }
-        else
-        {
-            _tick.Stop();
+            case Mode.Recording when _levelSource is not null:
+                var level = _levelSource();
+                _maxLevel = Math.Max(_maxLevel, level);
+                // Radice quadrata: la voce normale (RMS 0,01-0,1) riempie metà o più dell'altezza.
+                _wave.Push(Math.Clamp(MathF.Sqrt(level / 0.15f), 0, 1));
+                var silent = _elapsed.ElapsedMilliseconds > SilenceWarningMs && _maxLevel < WhisperTranscriber.SilenceRms;
+                _title.Text = silent ? "Nessun suono dal microfono" : _recordingTitle;
+                _title.ForeColor = silent ? Orange : Fore;
+                break;
+            case Mode.Working:
+                _detail.Text = $"{_elapsed.Elapsed.TotalSeconds:0.0} s";
+                break;
+            default:
+                _tick.Stop();
+                break;
         }
     }
 
@@ -215,28 +217,10 @@ internal sealed partial class OverlayForm : Form
         }
     }
 
-    private Button MakeButton(string text, int left)
-    {
-        var button = new Button
-        {
-            Text = text,
-            FlatStyle = FlatStyle.Flat,
-            BackColor = BoxColor,
-            ForeColor = TextColor,
-            TabStop = false,
-            Cursor = Cursors.Hand,
-        };
-        button.FlatAppearance.BorderColor = Color.FromArgb(70, 70, 78);
-        button.SetBounds(left, 0, S(84), S(30));
-        return button;
-    }
-
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
-        // Windows 11: angoli arrotondati come le finestre di sistema. Su Windows 10 la chiamata viene ignorata.
-        var round = 2;
-        _ = DwmSetWindowAttribute(Handle, 33, ref round, sizeof(int));
+        StyleWindow(Handle); // angoli arrotondati e bordo sottile su Windows 11
     }
 
     protected override void Dispose(bool disposing)
@@ -249,62 +233,100 @@ internal sealed partial class OverlayForm : Form
         base.Dispose(disposing);
     }
 
-    private int S(int pixels) => (int)Math.Round(pixels * DeviceDpi / 96f);
-
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool SetWindowPos(IntPtr hWnd, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);
 
-    [LibraryImport("dwmapi.dll")]
-    private static partial int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
-
-    private sealed class Dot : Control
+    /// <summary>Pallino di stato con un alone che pulsa mentre l'app ascolta o lavora.</summary>
+    private sealed class PulseDot : Control
     {
         private Color _color = Color.Gray;
+        private float _phase;
 
-        public Dot()
+        public PulseDot()
         {
-            SetStyle(ControlStyles.SupportsTransparentBackColor | ControlStyles.OptimizedDoubleBuffer, true);
-            BackColor = Background;
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint, true);
+            BackColor = Surface;
         }
 
-        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public Color Color
         {
             get => _color;
             set { _color = value; Invalidate(); }
         }
 
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public bool Pulsing { get; set; }
+
+        public void Advance()
+        {
+            if (!Pulsing) return;
+            _phase = (_phase + 0.06f) % 1f;
+            Invalidate();
+        }
+
         protected override void OnPaint(PaintEventArgs e)
         {
-            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            var g = e.Graphics;
+            g.Clear(BackColor);
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            var core = Width * 0.5f;
+            if (Pulsing)
+            {
+                var halo = core + (Width - core) * _phase;
+                using var haloBrush = new SolidBrush(Color.FromArgb((int)(110 * (1 - _phase)), _color));
+                g.FillEllipse(haloBrush, (Width - halo) / 2, (Height - halo) / 2, halo, halo);
+            }
             using var brush = new SolidBrush(_color);
-            e.Graphics.FillEllipse(brush, 0, 0, Width - 1, Height - 1);
+            g.FillEllipse(brush, (Width - core) / 2, (Height - core) / 2, core, core);
         }
     }
 
-    private sealed class LevelBar : Control
+    /// <summary>Forma d'onda: barre verticali arrotondate che scorrono con il livello del microfono.</summary>
+    private sealed class Waveform : Control
     {
-        private float _value;
+        private readonly float[] _levels = new float[48];
+        private int _head;
 
-        public LevelBar()
+        public Waveform()
         {
-            SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint, true);
-            BackColor = BoxColor;
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint, true);
+            BackColor = Surface;
         }
 
-        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-        public float Value
+        public void Reset()
         {
-            get => _value;
-            set { _value = value; Invalidate(); }
+            Array.Clear(_levels);
+            Invalidate();
+        }
+
+        public void Push(float level)
+        {
+            _levels[_head] = level;
+            _head = (_head + 1) % _levels.Length;
+            Invalidate();
         }
 
         protected override void OnPaint(PaintEventArgs e)
         {
-            e.Graphics.Clear(BoxColor);
-            using var brush = new SolidBrush(Red);
-            e.Graphics.FillRectangle(brush, 0, 0, (int)(Width * _value), Height);
+            var g = e.Graphics;
+            g.Clear(BackColor);
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            var count = _levels.Length;
+            var step = Width / (float)count;
+            var barWidth = Math.Max(2f, step * 0.55f);
+            var middle = Height / 2f;
+            for (var i = 0; i < count; i++)
+            {
+                var level = _levels[(_head + i) % count];
+                var height = Math.Max(barWidth, level * Height);
+                // Le barre più vecchie (a sinistra) sfumano.
+                var alpha = (int)(70 + 185 * (i / (float)count));
+                using var brush = new SolidBrush(Color.FromArgb(alpha, level > 0.02f ? Red : Muted));
+                using var path = RoundedRect(new RectangleF(i * step + (step - barWidth) / 2, middle - height / 2, barWidth, height), barWidth / 2);
+                g.FillPath(brush, path);
+            }
         }
     }
 }

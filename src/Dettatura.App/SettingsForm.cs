@@ -1,162 +1,263 @@
 using Dettatura.Core;
 using Dettatura.Core.Transcription;
+using static Dettatura.App.Theme;
 
 namespace Dettatura.App;
 
 /// <summary>
-/// Finestra delle impostazioni: modifica una copia di <see cref="DettaturaSettings"/> e la restituisce in
-/// <see cref="Result"/> solo se si preme Salva. Il file settings.json resta apribile per le voci avanzate.
+/// Finestra delle impostazioni in tema scuro, con barra laterale e pagine a schede. Modifica una copia di
+/// <see cref="DettaturaSettings"/> e la restituisce in <see cref="Result"/> solo se si preme Salva.
 /// </summary>
 internal sealed class SettingsForm : Form
 {
     private readonly DettaturaSettings _settings;
 
-    private readonly RadioButton _pushToTalk = Radio("Tieni premuta la scorciatoia mentre parli (push-to-talk)");
-    private readonly RadioButton _toggle = Radio("Premi la scorciatoia per iniziare, premila di nuovo per finire");
-    private readonly HotkeyBox _hotkeyDictate = new();
-    private readonly HotkeyBox _hotkeyClaude = new();
-    private readonly HotkeyBox _hotkeySelection = new();
+    private readonly OptionCard _pushToTalk = new("Tieni premuto", "Registra finché tieni premuta la scorciatoia. Ideale per frasi brevi.");
+    private readonly OptionCard _toggle = new("Avvio e stop", "Premi una volta per iniziare e una per finire. Comodo per dettature lunghe.");
+    private readonly KeyCapBox _hotkeyDictate = new();
+    private readonly KeyCapBox _hotkeyClaude = new();
+    private readonly KeyCapBox _hotkeySelection = new();
     private readonly NumericUpDown _minRecording = Number(0, 5000, 50);
 
-    private readonly ComboBox _microphone = DropDownList();
-    private readonly ComboBox _gpu = DropDownList();
-    private readonly ComboBox _language = new() { Items = { "it", "en", "auto" } };
+    private readonly DarkComboBox _microphone = Combo(300);
+    private readonly DarkComboBox _gpu = Combo(300);
+    private readonly DarkComboBox _language = Combo(140, "it", "en", "fr", "de", "es", "pt", "auto");
     private readonly TextBox _whisperModel = new();
-    private readonly TextBox _whisperPrompt = MultilineBox(2);
+    private readonly TextBox _whisperPrompt = Multiline();
 
-    private readonly ComboBox _claudeModel = new() { Items = { "sonnet", "haiku", "opus" } };
-    private readonly CheckBox _warmProcess = Check("Tieni pronto un processo claude per la dettatura successiva (più veloce)");
+    private readonly DarkComboBox _claudeModel = Combo(160, "sonnet", "haiku", "opus");
+    private readonly ToggleSwitch _warmProcess = new();
     private readonly NumericUpDown _timeout = Number(5, 300, 5);
     private readonly TextBox _claudeExecutable = new();
-    private readonly TextBox _systemPrompt = MultilineBox(5);
+    private readonly TextBox _systemPrompt = Multiline();
 
-    private readonly CheckBox _appendSpace = Check("Aggiungi uno spazio dopo il testo incollato");
-    private readonly CheckBox _restoreClipboard = Check("Ripristina gli appunti com'erano prima dell'incolla");
-    private readonly CheckBox _showOverlay = Check("Mostra la finestrella di stato in primo piano");
+    private readonly ToggleSwitch _appendSpace = new();
+    private readonly ToggleSwitch _restoreClipboard = new();
+    private readonly ToggleSwitch _showOverlay = new();
 
-    /// <param name="suspendHotkeys">Libera le scorciatoie mentre se ne scrive una nuova in un campo.</param>
-    /// <param name="resumeHotkeys">Le riattiva quando il campo perde il focus.</param>
+    private readonly Label _pageTitle = new() { Font = Display(18f), ForeColor = Fore, AutoSize = true, BackColor = Window };
+    private readonly Label _pageSubtitle = new() { Font = Body(9.5f), ForeColor = Muted, AutoSize = true, BackColor = Window };
+    private readonly Label _error = new() { Font = Body(9.5f), ForeColor = Red, AutoSize = false, BackColor = Window, TextAlign = ContentAlignment.MiddleLeft };
+    private readonly List<(NavButton Button, Page Page, string Title, string Subtitle)> _pages = [];
+
+    /// <param name="suspendHotkeys">Libera le scorciatoie mentre se ne sceglie una nuova.</param>
+    /// <param name="resumeHotkeys">Le riattiva a scelta fatta.</param>
     public SettingsForm(DettaturaSettings current, Action suspendHotkeys, Action resumeHotkeys)
     {
         _settings = current.Clone();
-        foreach (var box in new[] { _hotkeyDictate, _hotkeyClaude, _hotkeySelection })
-        {
-            box.Enter += (_, _) => suspendHotkeys();
-            box.Leave += (_, _) => resumeHotkeys();
-        }
 
         Text = "Dettatura · Impostazioni";
-        AutoScaleMode = AutoScaleMode.Dpi;
-        AutoScaleDimensions = new SizeF(96f, 96f);
-        Font = new Font("Segoe UI", 9.5f);
-        ClientSize = new Size(680, 580);
-        MinimumSize = new Size(600, 480);
+        AutoScaleMode = AutoScaleMode.None;
+        Font = Body(10f);
+        BackColor = Window;
+        ForeColor = Fore;
+        ClientSize = new Size(S(880), S(640));
+        MinimumSize = new Size(S(760), S(520));
         StartPosition = FormStartPosition.CenterScreen;
         MaximizeBox = false;
         MinimizeBox = false;
         ShowIcon = false;
 
-        var tabs = new TabControl { Dock = DockStyle.Fill, Padding = new Point(12, 5) };
-        tabs.TabPages.Add(BuildDictationTab());
-        tabs.TabPages.Add(BuildTranscriptionTab());
-        tabs.TabPages.Add(BuildClaudeTab());
-        tabs.TabPages.Add(BuildOtherTab());
+        foreach (var box in new[] { _hotkeyDictate, _hotkeyClaude, _hotkeySelection })
+        {
+            box.Enter += (_, _) => suspendHotkeys();
+            box.Leave += (_, _) => resumeHotkeys();
+        }
+        _pushToTalk.Selected += (_, _) => SelectMode(DictationMode.PushToTalk);
+        _toggle.Selected += (_, _) => SelectMode(DictationMode.Toggle);
 
-        Controls.Add(tabs);
-        Controls.Add(BuildFooter());
+        var pageHost = new Panel { Dock = DockStyle.Fill, BackColor = Window };
+        AddPage(pageHost, "Dettatura", "Come detti e le scorciatoie da tastiera.", BuildDictationPage());
+        AddPage(pageHost, "Trascrizione", "Microfono e Whisper, il modello che trascrive in locale sulla GPU.", BuildTranscriptionPage());
+        AddPage(pageHost, "Claude", "Riscrittura leggera, solo quando la chiedi: non cambia il senso e non aggiunge nulla.", BuildClaudePage());
+        AddPage(pageHost, "Incolla", "Cosa succede dopo la trascrizione.", BuildPastePage());
+
+        var content = new Panel { Dock = DockStyle.Fill, BackColor = Window };
+        content.Controls.Add(pageHost);
+        content.Controls.Add(BuildHeader());
+        content.Controls.Add(BuildFooter());
+
+        Controls.Add(content);
+        Controls.Add(BuildSidebar());
+
         LoadValues();
+        ShowPage(0);
     }
 
     /// <summary>Impostazioni modificate, valorizzate solo dopo Salva.</summary>
     public DettaturaSettings? Result { get; private set; }
 
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        StyleWindow(Handle, roundCorners: false);
+    }
+
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
+        ActiveControl = null; // nessun campo scorciatoia attivo all'apertura
         Activate(); // aperta dal tray, altrimenti resta dietro la finestra attiva
     }
 
-    private TabPage BuildDictationTab()
+    // --- pagine ---
+
+    private Page BuildDictationPage()
     {
-        var grid = Grid();
-        Section(grid, "Come si detta");
-        Full(grid, _pushToTalk);
-        Full(grid, _toggle);
-        Section(grid, "Scorciatoie (clicca nel campo e premi la combinazione)");
-        Full(grid, Note("Mentre il cursore è in uno di questi campi le scorciatoie sono sospese; altrove funzionano anche a finestra aperta."));
-        Row(grid, "Detta e incolla", _hotkeyDictate);
-        Row(grid, "Detta, riscrivi con Claude", _hotkeyClaude);
-        Row(grid, "Riscrivi la selezione", _hotkeySelection);
-        Section(grid, "Altro");
-        Row(grid, "Pressione minima (ms)", _minRecording,
-            "Solo push-to-talk: le pressioni più brevi sono considerate accidentali.");
-        return Page("Dettatura", grid);
+        var modes = new Panel { BackColor = Surface, Height = S(92) };
+        modes.Controls.AddRange([_pushToTalk, _toggle]);
+        modes.Resize += (_, _) =>
+        {
+            var half = (modes.Width - S(12)) / 2;
+            _pushToTalk.SetBounds(0, 0, half, modes.Height);
+            _toggle.SetBounds(half + S(12), 0, modes.Width - half - S(12), modes.Height);
+        };
+
+        return new Page(
+            new SettingsCard(new SettingRow("Modalità", null, modes, below: true)),
+            Section("Scorciatoie"),
+            new SettingsCard(
+                new SettingRow("Detta e incolla", "La trascrizione di Whisper così com'è.", _hotkeyDictate),
+                new SettingRow("Detta e riscrivi con Claude", "Whisper, poi una correzione leggera di Claude.", _hotkeyClaude),
+                new SettingRow("Riscrivi la selezione", "Sistema con Claude il testo selezionato nella finestra attiva.", _hotkeySelection),
+                new SettingRow("Come cambiarle", "Clicca su una scorciatoia e premi la nuova combinazione; Esc annulla. Mentre scegli, le scorciatoie sono sospese.", null)),
+            Section("Avanzate"),
+            new SettingsCard(
+                new SettingRow("Pressione minima (ms)", "Solo con Tieni premuto: le pressioni più brevi sono considerate accidentali.",
+                    Frame(_minRecording, S(110), S(34)))));
     }
 
-    private TabPage BuildTranscriptionTab()
+    private Page BuildTranscriptionPage() => new(
+        new SettingsCard(
+            new SettingRow("Microfono", null, _microphone),
+            new SettingRow("GPU", "Sui portatili con due GPU serve la dedicata: con l'integrata la trascrizione è circa 20 volte più lenta.", _gpu)),
+        Section("Whisper"),
+        new SettingsCard(
+            new SettingRow("Lingua", "Lingua parlata; auto la riconosce da sola ma sbaglia più spesso.", _language),
+            new SettingRow("Modello", $"Nome del file in {AppPaths.ModelsDir} oppure percorso completo.", Frame(_whisperModel, 0, S(36)), below: true),
+            new SettingRow("Contesto", "Aiuta punteggiatura, nomi e termini tecnici ricorrenti.", Frame(_whisperPrompt, 0, S(74)), below: true)));
+
+    private Page BuildClaudePage() => new(
+        new SettingsCard(
+            new SettingRow("Modello", "sonnet è il più fedele al testo dettato; haiku è più veloce ma a volte riformula.", _claudeModel),
+            new SettingRow("Processo pronto", "Tiene avviato un processo claude: la riscrittura risponde in circa 2 secondi invece di 4-5.", _warmProcess),
+            new SettingRow("Timeout (secondi)", "Attesa massima della risposta, poi incolla la trascrizione grezza.", Frame(_timeout, S(110), S(34)))),
+        Section("Avanzate"),
+        new SettingsCard(
+            new SettingRow("Eseguibile", "\"claude\" la cerca nel PATH e in %USERPROFILE%\\.local\\bin.", Frame(_claudeExecutable, 0, S(36)), below: true),
+            new SettingRow("Prompt personalizzato", "Vuoto usa il prompt da correttore di bozze predefinito.", Frame(_systemPrompt, 0, S(130)), below: true)));
+
+    private Page BuildPastePage() => new(
+        new SettingsCard(
+            new SettingRow("Spazio dopo il testo", "Le dettature consecutive non si attaccano.", _appendSpace),
+            new SettingRow("Ripristina gli appunti", "Dopo l'incolla gli appunti tornano com'erano.", _restoreClipboard),
+            new SettingRow("Finestrella di stato", "In primo piano mentre ascolta, trascrive e incolla, con il pulsante Copia.", _showOverlay)));
+
+    // --- struttura della finestra ---
+
+    private Panel BuildSidebar()
     {
-        var grid = Grid();
-        Row(grid, "Microfono", _microphone);
-        Row(grid, "GPU per Whisper", _gpu,
-            "Sui portatili con due GPU serve quella dedicata: con l'integrata la trascrizione è circa 20 volte più lenta.");
-        Row(grid, "Lingua", _language, "Codice di lingua di Whisper (it, en, ...) oppure auto.");
-        Row(grid, "Modello Whisper", _whisperModel, $"Nome del file in {AppPaths.ModelsDir} oppure percorso completo.");
-        Row(grid, "Contesto per Whisper", _whisperPrompt, "Aiuta punteggiatura, nomi e termini tecnici ricorrenti.");
-        return Page("Trascrizione", grid);
+        var sidebar = new Panel { Dock = DockStyle.Left, Width = S(220), BackColor = Sidebar };
+        var logo = new MicBadge { Location = new Point(S(20), S(24)) };
+        var title = new Label { Text = "Dettatura", Font = Display(14f), ForeColor = Fore, AutoSize = true, BackColor = Sidebar, Location = new Point(S(64), S(22)) };
+        var subtitle = new Label { Text = "Impostazioni", Font = Body(9f), ForeColor = Muted, AutoSize = true, BackColor = Sidebar, Location = new Point(S(65), S(48)) };
+        sidebar.Controls.AddRange([logo, title, subtitle]);
+
+        for (var i = 0; i < _pages.Count; i++)
+        {
+            var button = _pages[i].Button;
+            button.SetBounds(S(12), S(100) + i * S(42), S(196), S(38));
+            var index = i;
+            button.Click += (_, _) => ShowPage(index);
+            sidebar.Controls.Add(button);
+        }
+
+        sidebar.Paint += (_, e) =>
+        {
+            using var pen = new Pen(Divider);
+            e.Graphics.DrawLine(pen, sidebar.Width - 1, 0, sidebar.Width - 1, sidebar.Height);
+        };
+        return sidebar;
     }
 
-    private TabPage BuildClaudeTab()
+    private Panel BuildHeader()
     {
-        var grid = Grid();
-        Row(grid, "Modello", _claudeModel, "sonnet è il più fedele al testo dettato; haiku è più veloce ma a volte riformula.");
-        Full(grid, _warmProcess);
-        Row(grid, "Timeout (secondi)", _timeout);
-        Row(grid, "Eseguibile", _claudeExecutable, "\"claude\" la cerca nel PATH e in %USERPROFILE%\\.local\\bin.");
-        Row(grid, "Prompt personalizzato", _systemPrompt, "Vuoto usa il prompt da correttore di bozze predefinito.");
-        return Page("Claude", grid);
-    }
-
-    private TabPage BuildOtherTab()
-    {
-        var grid = Grid();
-        Full(grid, _appendSpace);
-        Full(grid, _restoreClipboard);
-        Full(grid, _showOverlay);
-        return Page("Incolla e finestrella", grid);
+        var header = new Panel { Dock = DockStyle.Top, Height = S(96), BackColor = Window };
+        _pageTitle.Location = new Point(S(28), S(24));
+        _pageSubtitle.Location = new Point(S(30), S(62));
+        header.Controls.AddRange([_pageTitle, _pageSubtitle]);
+        return header;
     }
 
     private Panel BuildFooter()
     {
-        var footer = new TableLayoutPanel
+        var footer = new Panel { Dock = DockStyle.Bottom, Height = S(68), BackColor = Window };
+        var link = new LinkLabel
         {
-            Dock = DockStyle.Bottom,
-            ColumnCount = 3,
+            Text = "Apri settings.json",
             AutoSize = true,
-            Padding = new Padding(10, 8, 10, 10),
+            Font = Body(9.5f),
+            LinkColor = Accent,
+            ActiveLinkColor = AccentHover,
+            VisitedLinkColor = Accent,
+            LinkBehavior = LinkBehavior.HoverUnderline,
+            BackColor = Window,
         };
-        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-
-        var link = new LinkLabel { Text = "Apri settings.json", AutoSize = true, Anchor = AnchorStyles.Left };
         link.LinkClicked += (_, _) => TrayApp.OpenFile(AppPaths.SettingsFile);
         new ToolTip().SetToolTip(link, $"{AppPaths.SettingsFile}\nLe modifiche fatte a mano nel file valgono al riavvio dell'app.");
 
-        var save = new Button { Text = "Salva", AutoSize = true, MinimumSize = new Size(90, 0) };
+        var save = new ModernButton("Salva", primary: true);
         save.Click += (_, _) => Save();
-        var cancel = new Button { Text = "Annulla", AutoSize = true, MinimumSize = new Size(90, 0), DialogResult = DialogResult.Cancel };
+        var cancel = new ModernButton("Annulla") { DialogResult = DialogResult.Cancel };
         AcceptButton = save;
         CancelButton = cancel;
 
-        footer.Controls.Add(link, 0, 0);
-        footer.Controls.Add(save, 1, 0);
-        footer.Controls.Add(cancel, 2, 0);
+        footer.Controls.AddRange([link, _error, save, cancel]);
+        footer.Resize += (_, _) =>
+        {
+            var middle = footer.Height / 2;
+            cancel.Location = new Point(footer.Width - S(28) - cancel.Width, middle - cancel.Height / 2);
+            save.Location = new Point(cancel.Left - S(10) - save.Width, cancel.Top);
+            link.Location = new Point(S(28), middle - link.Height / 2);
+            _error.SetBounds(link.Right + S(16), middle - S(14), Math.Max(0, save.Left - link.Right - S(28)), S(28));
+        };
+        footer.Paint += (_, e) =>
+        {
+            using var pen = new Pen(Divider);
+            e.Graphics.DrawLine(pen, 0, 0, footer.Width, 0);
+        };
         return footer;
     }
 
+    private void AddPage(Panel host, string title, string subtitle, Page page)
+    {
+        page.Visible = false;
+        host.Controls.Add(page);
+        _pages.Add((new NavButton(title) { TabStop = false }, page, title, subtitle));
+    }
+
+    private void ShowPage(int index)
+    {
+        for (var i = 0; i < _pages.Count; i++)
+        {
+            _pages[i].Button.Selected = i == index;
+            _pages[i].Page.Visible = i == index;
+        }
+        _pageTitle.Text = _pages[index].Title;
+        _pageSubtitle.Text = _pages[index].Subtitle;
+    }
+
+    private void SelectMode(DictationMode mode)
+    {
+        _pushToTalk.IsSelected = mode == DictationMode.PushToTalk;
+        _toggle.IsSelected = mode == DictationMode.Toggle;
+    }
+
+    // --- valori ---
+
     private void LoadValues()
     {
-        (_settings.Mode == DictationMode.Toggle ? _toggle : _pushToTalk).Checked = true;
+        SelectMode(_settings.Mode);
         _hotkeyDictate.Text = _settings.HotkeyDictate;
         _hotkeyClaude.Text = _settings.HotkeyDictateWithClaude;
         _hotkeySelection.Text = _settings.HotkeyCleanSelection;
@@ -168,18 +269,18 @@ internal sealed class SettingsForm : Form
 
         var gpus = VulkanDevices.List();
         var discrete = gpus.FirstOrDefault(g => g.Discrete);
-        _gpu.Items.Add(new Choice(-1, discrete.Name is null ? "Automatica" : $"Automatica ({discrete.Name})"));
+        _gpu.Items.Add(new Choice(-1, discrete.Name is null ? "Automatica" : $"Automatica · {discrete.Name}"));
         foreach (var (index, name, isDiscrete) in gpus)
         {
-            _gpu.Items.Add(new Choice(index, $"{index} · {name} ({(isDiscrete ? "dedicata" : "integrata")})"));
+            _gpu.Items.Add(new Choice(index, $"{name} ({(isDiscrete ? "dedicata" : "integrata")})"));
         }
         Select(_gpu, _settings.GpuDevice);
 
-        _language.Text = _settings.Language;
+        SelectText(_language, _settings.Language);
         _whisperModel.Text = _settings.WhisperModel;
         _whisperPrompt.Text = _settings.WhisperPrompt;
 
-        _claudeModel.Text = _settings.Claude.Model;
+        SelectText(_claudeModel, _settings.Claude.Model);
         _warmProcess.Checked = _settings.Claude.UseWarmProcess;
         _timeout.Value = Math.Clamp(_settings.Claude.TimeoutSeconds, (int)_timeout.Minimum, (int)_timeout.Maximum);
         _claudeExecutable.Text = _settings.Claude.Executable;
@@ -199,23 +300,26 @@ internal sealed class SettingsForm : Form
         }
         catch (FormatException e)
         {
-            MessageBox.Show(this, e.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            ShowError(e.Message, 0);
             return;
         }
         if (hotkeys.Distinct(StringComparer.OrdinalIgnoreCase).Count() < hotkeys.Length)
         {
-            MessageBox.Show(this, "Le tre scorciatoie devono essere diverse.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            ShowError("Le tre scorciatoie devono essere diverse.", 0);
             return;
         }
-        if (string.IsNullOrWhiteSpace(_language.Text) || string.IsNullOrWhiteSpace(_whisperModel.Text) ||
-            string.IsNullOrWhiteSpace(_claudeModel.Text) || string.IsNullOrWhiteSpace(_claudeExecutable.Text))
+        if (string.IsNullOrWhiteSpace(_language.Text) || string.IsNullOrWhiteSpace(_whisperModel.Text))
         {
-            MessageBox.Show(this, "Lingua, modello Whisper, modello ed eseguibile di Claude non possono essere vuoti.",
-                Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            ShowError("Lingua e modello di Whisper non possono essere vuoti.", 1);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_claudeModel.Text) || string.IsNullOrWhiteSpace(_claudeExecutable.Text))
+        {
+            ShowError("Modello ed eseguibile di Claude non possono essere vuoti.", 2);
             return;
         }
 
-        _settings.Mode = _toggle.Checked ? DictationMode.Toggle : DictationMode.PushToTalk;
+        _settings.Mode = _toggle.IsSelected ? DictationMode.Toggle : DictationMode.PushToTalk;
         _settings.HotkeyDictate = _hotkeyDictate.Text;
         _settings.HotkeyDictateWithClaude = _hotkeyClaude.Text;
         _settings.HotkeyCleanSelection = _hotkeySelection.Text;
@@ -241,6 +345,13 @@ internal sealed class SettingsForm : Form
         DialogResult = DialogResult.OK;
     }
 
+    /// <summary>Errore nel piè di pagina, aprendo la pagina che contiene il campo da correggere.</summary>
+    private void ShowError(string message, int page)
+    {
+        ShowPage(page);
+        _error.Text = message;
+    }
+
     private static void Select(ComboBox combo, int value)
     {
         var item = combo.Items.Cast<Choice>().FirstOrDefault(c => c.Value == value);
@@ -258,109 +369,100 @@ internal sealed class SettingsForm : Form
         public override string ToString() => Text;
     }
 
-    // --- costruzione della griglia: etichetta a sinistra, controllo a destra, nota grigia sotto ---
+    // --- fabbriche dei controlli ---
 
-    private static TableLayoutPanel Grid()
+    private static Label Section(string title) => new()
     {
-        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Padding = new Padding(12, 10, 16, 10) };
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        return grid;
+        Text = title,
+        Font = Strong(10.5f),
+        ForeColor = Fore,
+        BackColor = Window,
+        AutoSize = false,
+        Height = S(30),
+        TextAlign = ContentAlignment.BottomLeft,
+    };
+
+    private static FieldFrame Frame(Control inner, int width, int height)
+    {
+        var frame = new FieldFrame(inner, height);
+        if (width > 0) frame.Width = width;
+        return frame;
     }
 
-    private static TabPage Page(string title, TableLayoutPanel grid)
+    private static DarkComboBox Combo(int width, params string[] items)
     {
-        AddRow(grid); // riga vuota finale: prende lo spazio avanzato, così le altre restano in alto
-        var page = new TabPage(title) { UseVisualStyleBackColor = true };
-        page.Controls.Add(grid);
-        return page;
+        var combo = new DarkComboBox { Width = S(width), DropDownWidth = S(Math.Max(width, 360)) };
+        combo.Items.AddRange(items);
+        return combo;
     }
 
-    private static void Row(TableLayoutPanel grid, string label, Control control, string? hint = null)
+    /// <summary>Seleziona una voce di testo; se non è nell'elenco (valore scritto a mano nel file) la aggiunge.</summary>
+    private static void SelectText(ComboBox combo, string value)
     {
-        var row = AddRow(grid);
-        grid.Controls.Add(new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left | AnchorStyles.Top, Margin = new Padding(0, 7, 14, 3) }, 0, row);
-        control.Anchor = control is NumericUpDown ? AnchorStyles.Left | AnchorStyles.Top : AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top;
-        control.Margin = new Padding(0, 4, 0, hint is null ? 6 : 0);
-        grid.Controls.Add(control, 1, row);
-        if (hint is null) return;
-
-        row = AddRow(grid);
-        var note = new Label { Text = hint, AutoSize = true, ForeColor = SystemColors.GrayText, Margin = new Padding(0, 2, 0, 8), MaximumSize = new Size(460, 0) };
-        grid.Controls.Add(note, 1, row);
+        if (!combo.Items.Contains(value)) combo.Items.Add(value);
+        combo.SelectedItem = value;
     }
-
-    private static void Full(TableLayoutPanel grid, Control control)
-    {
-        var row = AddRow(grid);
-        control.Margin = new Padding(0, 4, 0, 4);
-        grid.Controls.Add(control, 0, row);
-        grid.SetColumnSpan(control, 2);
-    }
-
-    private static void Section(TableLayoutPanel grid, string title)
-    {
-        var label = new Label
-        {
-            Text = title,
-            AutoSize = true,
-            Font = new Font("Segoe UI Semibold", 9.5f),
-            Margin = new Padding(0, grid.RowCount == 0 ? 2 : 12, 0, 4),
-        };
-        Full(grid, label);
-    }
-
-    private static int AddRow(TableLayoutPanel grid)
-    {
-        grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        return grid.RowCount++;
-    }
-
-    private static Label Note(string text) =>
-        new() { Text = text, AutoSize = true, ForeColor = SystemColors.GrayText, MaximumSize = new Size(620, 0) };
-
-    private static RadioButton Radio(string text) => new() { Text = text, AutoSize = true };
-
-    private static CheckBox Check(string text) => new() { Text = text, AutoSize = true };
-
-    private static ComboBox DropDownList() => new() { DropDownStyle = ComboBoxStyle.DropDownList };
 
     private static NumericUpDown Number(int min, int max, int step) =>
-        new() { Minimum = min, Maximum = max, Increment = step, Width = 90, Anchor = AnchorStyles.Left };
+        new() { Minimum = min, Maximum = max, Increment = step, TextAlign = HorizontalAlignment.Left };
 
-    private static TextBox MultilineBox(int lines) =>
-        new() { Multiline = true, ScrollBars = ScrollBars.Vertical, Height = 10 + lines * 23, AcceptsReturn = true };
-}
+    private static TextBox Multiline() =>
+        new() { Multiline = true, ScrollBars = ScrollBars.None, AcceptsReturn = true };
 
-/// <summary>Campo che registra la combinazione di tasti premuta, nel formato delle impostazioni ("Ctrl+Alt+D").</summary>
-internal sealed class HotkeyBox : TextBox
-{
-    public HotkeyBox()
+    /// <summary>Pagina scorrevole: impila schede e titoletti di sezione a tutta larghezza.</summary>
+    private sealed class Page : Panel
     {
-        ReadOnly = true;
-        BackColor = SystemColors.Window;
-        ShortcutsEnabled = false;
-        Cursor = Cursors.Hand;
+        private bool _arranging;
+
+        public Page(params Control[] items)
+        {
+            Dock = DockStyle.Fill;
+            AutoScroll = true;
+            BackColor = Window;
+            Controls.AddRange(items);
+            DarkScrollbars(this);
+        }
+
+        protected override void OnLayout(LayoutEventArgs levent)
+        {
+            base.OnLayout(levent);
+            if (_arranging) return;
+            _arranging = true;
+            try
+            {
+                var x = S(28);
+                var width = ClientSize.Width - 2 * x;
+                var y = 0;
+                foreach (Control item in Controls)
+                {
+                    var height = item is SettingsCard card ? card.Arrange(width) : item.Height;
+                    if (item is not SettingsCard) item.Width = width;
+                    item.Location = new Point(x, y + AutoScrollPosition.Y);
+                    y += height + (item is SettingsCard ? S(18) : S(8));
+                }
+                AutoScrollMinSize = new Size(0, y + S(8));
+            }
+            finally
+            {
+                _arranging = false;
+            }
+        }
     }
 
-    protected override bool IsInputKey(Keys keyData) => true;
-
-    protected override void OnKeyDown(KeyEventArgs e)
+    /// <summary>Icona dell'app nella barra laterale: microfono bianco su cerchio d'accento.</summary>
+    private sealed class MicBadge : Control
     {
-        e.Handled = true;
-        e.SuppressKeyPress = true;
-        var key = e.KeyCode;
-        if (key is Keys.ControlKey or Keys.ShiftKey or Keys.Menu or Keys.LWin or Keys.RWin) return;
+        public MicBadge()
+        {
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint, true);
+            Size = new Size(S(34), S(34));
+            BackColor = Sidebar;
+        }
 
-        var parts = new List<string>();
-        if (e.Control) parts.Add("Ctrl");
-        if (e.Alt) parts.Add("Alt");
-        if (e.Shift) parts.Add("Shift");
-        if (Native.IsKeyDown(Native.VK_LWIN) || Native.IsKeyDown(Native.VK_RWIN)) parts.Add("Win");
-        // Senza modificatori la scorciatoia ruberebbe il tasto a ogni app: ammessi solo i tasti funzione.
-        if (parts.Count == 0 && key is not (>= Keys.F1 and <= Keys.F24)) return;
-
-        parts.Add(key.ToString());
-        Text = string.Join("+", parts);
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            e.Graphics.Clear(BackColor);
+            TrayIcons.DrawMic(e.Graphics, new RectangleF(0, 0, Width - 1, Height - 1), Accent);
+        }
     }
 }

@@ -17,9 +17,9 @@ internal sealed class TrayApp : ApplicationContext
     private readonly HotkeyWindow _hotkeys = new();
     private MicRecorder _mic;
     private readonly System.Windows.Forms.Timer _releaseTimer = new() { Interval = 15 };
-    private readonly Icon _idleIcon = TrayIcons.Circle(Color.FromArgb(120, 120, 120));
-    private readonly Icon _recordingIcon = TrayIcons.Circle(Color.FromArgb(220, 40, 40));
-    private readonly Icon _workingIcon = TrayIcons.Circle(Color.FromArgb(235, 160, 20));
+    private readonly Icon _idleIcon = TrayIcons.Circle(Color.FromArgb(110, 110, 124));
+    private readonly Icon _recordingIcon = TrayIcons.Circle(Theme.Red);
+    private readonly Icon _workingIcon = TrayIcons.Circle(Theme.Orange);
 
     private OverlayForm? _overlay;
     private SettingsForm? _settingsForm;
@@ -40,7 +40,14 @@ internal sealed class TrayApp : ApplicationContext
         _copyLastItem = new ToolStripMenuItem("Copia ultima dettatura", null, (_, _) => CopyLast()) { Enabled = false };
 
         _statusItem = new ToolStripMenuItem("Avvio...") { Enabled = false };
-        var menu = new ContextMenuStrip();
+        var menu = new ContextMenuStrip
+        {
+            Renderer = new DarkMenuRenderer(),
+            BackColor = Theme.Surface,
+            ForeColor = Theme.Fore,
+            Font = Theme.Body(9.5f),
+            Padding = new Padding(0, Theme.S(4), 0, Theme.S(4)),
+        };
         menu.Items.Add(_statusItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_copyLastItem);

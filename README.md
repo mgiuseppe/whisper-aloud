@@ -116,7 +116,7 @@ Le modifiche fatte a mano nel file valgono al riavvio dell'app; quelle dalla fin
 | Progetto | Contenuto |
 |---|---|
 | `src/Dettatura.Core` | trascrizione (`WhisperTranscriber`), riscrittura (`ClaudeCleaner`, protocollo stream-json), impostazioni, registro latenze |
-| `src/Dettatura.App` | app WinForms nel tray: `RegisterHotKey`, registrazione NAudio, finestrella di stato, finestra Impostazioni, incolla con `SendInput` |
+| `src/Dettatura.App` | app WinForms nel tray in tema scuro (controlli disegnati in `ModernControls`, colori in `Theme`): `RegisterHotKey`, registrazione NAudio, finestrella di stato, finestra Impostazioni, incolla con `SendInput` |
 | `tools/Dettatura.Bench` | benchmark della pipeline su file audio |
 | `tests/Dettatura.Core.Tests` | test xUnit di protocollo, prompt e argomenti della CLI |
 | `samples` | tre frasi sintetizzate con la voce Elsa di Windows (per i tempi di Whisper) e `trascrizioni.txt` (per qualità e tempi della riscrittura) |

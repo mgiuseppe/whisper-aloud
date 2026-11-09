@@ -11,6 +11,9 @@ internal static class Program
         if (!isFirstInstance) return;
 
         ApplicationConfiguration.Initialize();
+#pragma warning disable WFO5001 // modalità scura di WinForms: ancora sperimentale, ma copre elenchi a discesa e campi numerici
+        Application.SetColorMode(SystemColorMode.Dark);
+#pragma warning restore WFO5001
         Application.ThreadException += (_, e) => AppLog.Write(e.Exception);
 
         DettaturaSettings settings;
