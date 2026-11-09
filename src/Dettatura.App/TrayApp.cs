@@ -97,6 +97,13 @@ internal sealed class TrayApp : ApplicationContext
                 $"Pronta ({WhisperTranscriber.LoadedRuntime}). Tieni premuto {_settings.HotkeyDictate} per dettare.",
                 ToolTipIcon.Info);
         }
+        catch (HttpRequestException e)
+        {
+            SetStatus("Modello Whisper non scaricato");
+            Report(new InvalidOperationException(
+                $"Download del modello Whisper non riuscito (rete). Riavvia l'app per riprovare, oppure scarica " +
+                $"ggml-large-v3-turbo-q5_0.bin da huggingface.co/ggerganov/whisper.cpp in {AppPaths.ModelsDir}.", e));
+        }
         catch (Exception e)
         {
             SetStatus("Whisper non disponibile");
