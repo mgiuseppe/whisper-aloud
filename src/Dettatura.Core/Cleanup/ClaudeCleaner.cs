@@ -40,7 +40,7 @@ public sealed class ClaudeCleaner : IAsyncDisposable
     [
         "-p",
         "--model", options.Model,
-        "--system-prompt", string.IsNullOrWhiteSpace(options.SystemPrompt) ? CleanupPrompt.Default : options.SystemPrompt,
+        "--system-prompt", string.IsNullOrWhiteSpace(options.SystemPrompt) ? CleanupPrompt.System : options.SystemPrompt,
         "--tools", "",
         "--safe-mode",
         "--strict-mcp-config",
@@ -50,7 +50,12 @@ public sealed class ClaudeCleaner : IAsyncDisposable
         "--verbose",
     ];
 
-    public async Task<string> CleanAsync(string transcript, CancellationToken cancellationToken = default)
+    /// <summary>Correzione leggera, il prompt di base.</summary>
+    public Task<string> CleanAsync(string transcript, CancellationToken cancellationToken = default) =>
+        CleanAsync(transcript, CleanupPrompt.Correction, cancellationToken);
+
+    /// <param name="instructions">Cosa fare del testo: l'istruzione di un <see cref="PromptPreset"/>.</param>
+    public async Task<string> CleanAsync(string transcript, string instructions, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (string.IsNullOrWhiteSpace(transcript)) return transcript;
@@ -60,7 +65,7 @@ public sealed class ClaudeCleaner : IAsyncDisposable
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(_options.TimeoutSeconds));
-            var response = await process.AskAsync(CleanupPrompt.Wrap(transcript), timeout.Token).ConfigureAwait(false);
+            var response = await process.AskAsync(CleanupPrompt.Build(instructions, transcript), timeout.Token).ConfigureAwait(false);
             return CleanupPrompt.Unwrap(response);
         }
         finally

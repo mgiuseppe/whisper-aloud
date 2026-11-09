@@ -1,4 +1,4 @@
-using Dettatura.Core.Cleanup;
+﻿using Dettatura.Core.Cleanup;
 
 namespace Dettatura.Core.Tests;
 
@@ -38,5 +38,41 @@ public class CleanupPromptTests
         var args = ClaudeCleaner.BuildArguments(new ClaudeOptions { SystemPrompt = "Solo punteggiatura." });
 
         Assert.Equal("Solo punteggiatura.", args[args.ToList().IndexOf("--system-prompt") + 1]);
+    }
+
+    [Fact]
+    public void Build_PutsInstructionBeforeTranscript()
+    {
+        var message = CleanupPrompt.Build(" Traduci in inglese. ", "ciao a tutti");
+
+        Assert.Equal("<istruzione>\nTraduci in inglese.\n</istruzione>\n\n<dettato>\nciao a tutti\n</dettato>", message);
+    }
+
+    [Fact]
+    public void BuildArguments_UsesGeneralSystemPromptByDefault()
+    {
+        var args = ClaudeCleaner.BuildArguments(new ClaudeOptions());
+
+        Assert.Equal(CleanupPrompt.System, args[args.ToList().IndexOf("--system-prompt") + 1]);
+    }
+
+    [Fact]
+    public void FindPrompt_FallsBackToSelectedThenFirst()
+    {
+        var options = new ClaudeOptions { SelectedPrompt = "Minuta" };
+
+        Assert.Equal("Pirata ubriaco", options.FindPrompt("pirata ubriaco").Name);
+        Assert.Equal("Minuta", options.FindPrompt("non esiste").Name);
+        options.SelectedPrompt = "sparito";
+        Assert.Equal("Correzione", options.FindPrompt(null).Name);
+    }
+
+    [Fact]
+    public void DefaultPrompts_MinuteIsShownNotPasted()
+    {
+        var minute = new ClaudeOptions().FindPrompt("Minuta");
+
+        Assert.False(minute.Paste);
+        Assert.True(new ClaudeOptions().FindPrompt("Correzione").Paste);
     }
 }

@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text.Json;
 using Dettatura.Core;
 using Dettatura.Core.Cleanup;
@@ -28,7 +28,8 @@ internal sealed class TrayApp : ApplicationContext
     private ClaudeCleaner? _cleaner;
     private WhisperTranscriber? _transcriber;
     private Hotkey? _heldHotkey;
-    private bool _heldClean;
+    /// <summary>Prompt di Claude per la dettatura in corso; null = solo trascrizione. Si cambia dalla finestrella.</summary>
+    private string? _heldPrompt;
     private readonly Stopwatch _recording = new();
     private bool _busy;
 
@@ -51,6 +52,7 @@ internal sealed class TrayApp : ApplicationContext
         menu.Items.Add(_statusItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_copyLastItem);
+        menu.Items.Add(BuildPromptMenu());
         menu.Items.Add(BuildMicrophoneMenu());
         menu.Items.Add("Impostazioni...", null, (_, _) => OpenSettings());
         menu.Items.Add("Registro latenze", null, (_, _) => OpenFile(AppPaths.LatencyLog));
@@ -81,6 +83,30 @@ internal sealed class TrayApp : ApplicationContext
             {
                 var item = new ToolStripMenuItem(name) { Checked = index == _settings.MicrophoneDevice };
                 item.Click += (_, _) => SelectMicrophone(index);
+                root.DropDownItems.Add(item);
+            }
+        };
+        root.DropDownItems.Add("..."); // segnaposto: senza voci il sottomenu non si apre
+        return root;
+    }
+
+    /// <summary>Sottomenu per scegliere il prompt predefinito di Claude; la scelta viene salvata.</summary>
+    private ToolStripMenuItem BuildPromptMenu()
+    {
+        var root = new ToolStripMenuItem("Prompt di Claude");
+        root.DropDownOpening += (_, _) =>
+        {
+            root.DropDownItems.Clear();
+            var selected = _settings.Claude.FindPrompt(null).Name;
+            foreach (var prompt in _settings.Claude.Prompts)
+            {
+                var item = new ToolStripMenuItem(prompt.Name) { Checked = prompt.Name == selected };
+                item.Click += (_, _) =>
+                {
+                    _settings.Claude.SelectedPrompt = prompt.Name;
+                    _settings.Save();
+                    AppLog.Info($"prompt predefinito: {prompt.Name}");
+                };
                 root.DropDownItems.Add(item);
             }
         };
@@ -171,7 +197,7 @@ internal sealed class TrayApp : ApplicationContext
         {
             var held = _heldHotkey.Text;
             _heldHotkey = null;
-            _ = FinishDictationAsync(_heldClean, held);
+            _ = FinishDictationAsync(held);
             return;
         }
         if (_busy || _mic.IsRecording) return;
@@ -192,13 +218,18 @@ internal sealed class TrayApp : ApplicationContext
         }
 
         _heldHotkey = hotkey;
-        _heldClean = cleanup && _cleaner is not null;
+        _heldPrompt = cleanup && _cleaner is not null ? _settings.Claude.FindPrompt(null).Name : null;
         _recording.Restart();
         _tray.Icon = _recordingIcon;
-        SetStatus(cleanup ? "In ascolto (con riscrittura Claude)" : "In ascolto");
+        SetStatus(_heldPrompt is null ? "In ascolto" : $"In ascolto (Claude: {_heldPrompt})");
         var toggle = _settings.Mode == DictationMode.Toggle;
-        _overlay?.ShowRecording(cleanup ? "In ascolto · poi riscrive Claude" : "In ascolto",
-            toggle ? $"{hotkey.Text} per finire" : $"rilascia {hotkey.Text}", () => _mic.Level);
+        _overlay?.ShowRecording("In ascolto", toggle ? $"{hotkey.Text} per finire" : $"rilascia {hotkey.Text}", () => _mic.Level,
+            _cleaner is null ? null : _settings.Claude.Prompts.Select(p => p.Name).ToList(), _heldPrompt,
+            name =>
+            {
+                _heldPrompt = name;
+                AppLog.Info($"prompt scelto per questa dettatura: {name ?? "solo trascrizione"}");
+            });
         if (!toggle) _releaseTimer.Start();
     }
 
@@ -209,11 +240,12 @@ internal sealed class TrayApp : ApplicationContext
         _releaseTimer.Stop();
         var hotkey = _heldHotkey.Text;
         _heldHotkey = null;
-        _ = FinishDictationAsync(_heldClean, hotkey);
+        _ = FinishDictationAsync(hotkey);
     }
 
-    private async Task FinishDictationAsync(bool cleanup, string hotkey)
+    private async Task FinishDictationAsync(string hotkey)
     {
+        var preset = _heldPrompt is null || _cleaner is null ? null : _settings.Claude.FindPrompt(_heldPrompt);
         var samples = _mic.Stop();
         _recording.Stop();
         var rms = WhisperTranscriber.Rms(samples);
@@ -256,29 +288,40 @@ internal sealed class TrayApp : ApplicationContext
                 return;
             }
 
-            if (cleanup && _cleaner is not null)
+            var paste = true;
+            if (preset is not null && _cleaner is not null)
             {
-                SetStatus("Pulizia con Claude...");
-                _overlay?.ShowWorking("Riscrittura con Claude…");
+                SetStatus($"Claude: {preset.Name}...");
+                _overlay?.ShowWorking($"Claude · {preset.Name}…");
                 step.Restart();
                 try
                 {
-                    text = await _cleaner.CleanAsync(text);
+                    text = await _cleaner.CleanAsync(text, preset.Instructions);
+                    paste = preset.Paste;
+                    AppLog.Info($"claude ({preset.Name}) in {step.ElapsedMilliseconds} ms: {text.Length} caratteri");
                 }
                 catch (Exception e) when (e is ClaudeCliException or OperationCanceledException or IOException)
                 {
-                    Report(new InvalidOperationException($"Pulizia non riuscita, incollo la trascrizione grezza. {e.Message}", e));
+                    Report(new InvalidOperationException($"Riscrittura non riuscita, incollo la trascrizione grezza. {e.Message}", e));
                 }
                 cleanMs = step.ElapsedMilliseconds;
             }
 
             step.Restart();
-            await TextInjector.PasteAsync(_settings.AppendSpace ? text + " " : text, _settings.RestoreClipboard);
+            if (paste)
+            {
+                await TextInjector.PasteAsync(_settings.AppendSpace ? text + " " : text, _settings.RestoreClipboard);
+                _overlay?.ShowResult("Incollato", $"{total.Elapsed.TotalSeconds:0.0} s", text);
+            }
+            else
+            {
+                // Prompt che non incolla (es. Minuta): il risultato resta nella finestrella finché non si chiude.
+                _overlay?.ShowResult($"{preset!.Name} pronta", $"{total.Elapsed.TotalSeconds:0.0} s", text, sticky: true);
+            }
             pasteMs = step.ElapsedMilliseconds;
             Remember(text);
-            _overlay?.ShowResult("Incollato", $"{total.Elapsed.TotalSeconds:0.0} s", text);
 
-            LatencyLog.Append(new LatencySample(DateTimeOffset.Now, cleanup ? "clean" : "raw",
+            LatencyLog.Append(new LatencySample(DateTimeOffset.Now, preset is null ? "raw" : "clean",
                 samples.Length / (double)WhisperTranscriber.SampleRate, transcribeMs, cleanMs, pasteMs,
                 total.ElapsedMilliseconds, text.Length));
         }
@@ -317,17 +360,26 @@ internal sealed class TrayApp : ApplicationContext
                 return;
             }
 
-            SetStatus("Pulizia della selezione...");
-            _overlay?.ShowWorking("Riscrittura della selezione…");
+            var preset = _settings.Claude.FindPrompt(null);
+            SetStatus($"Claude: {preset.Name} sulla selezione...");
+            _overlay?.ShowWorking($"Claude · {preset.Name} sulla selezione…");
             var step = Stopwatch.StartNew();
-            var cleaned = await _cleaner.CleanAsync(selection);
+            var cleaned = await _cleaner.CleanAsync(selection, preset.Instructions);
             var cleanMs = step.ElapsedMilliseconds;
 
             step.Restart();
-            AppLog.Info($"selezione riscritta in {cleanMs} ms: {cleaned.Length} caratteri");
-            await TextInjector.PasteAsync(cleaned, _settings.RestoreClipboard, original);
+            AppLog.Info($"selezione riscritta ({preset.Name}) in {cleanMs} ms: {cleaned.Length} caratteri");
+            if (preset.Paste)
+            {
+                await TextInjector.PasteAsync(cleaned, _settings.RestoreClipboard, original);
+                _overlay?.ShowResult("Selezione riscritta", $"{total.Elapsed.TotalSeconds:0.0} s", cleaned);
+            }
+            else
+            {
+                TextInjector.Restore(original);
+                _overlay?.ShowResult($"{preset.Name} pronta", $"{total.Elapsed.TotalSeconds:0.0} s", cleaned, sticky: true);
+            }
             Remember(cleaned);
-            _overlay?.ShowResult("Selezione riscritta", $"{total.Elapsed.TotalSeconds:0.0} s", cleaned);
             LatencyLog.Append(new LatencySample(DateTimeOffset.Now, "selection", 0, 0, cleanMs,
                 step.ElapsedMilliseconds, total.ElapsedMilliseconds, cleaned.Length));
         }

@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
@@ -22,6 +22,7 @@ internal sealed partial class OverlayForm : Form
     private readonly Label _title = new();
     private readonly Label _detail = new();
     private readonly Waveform _wave = new();
+    private readonly PromptPicker _picker = new();
     private readonly Panel _textFrame = new();
     private readonly TextBox _text = new();
     private readonly ModernButton _copy = new("Copia", primary: true);
@@ -34,6 +35,7 @@ internal sealed partial class OverlayForm : Form
     private float _maxLevel;
     private string _recordingTitle = string.Empty;
     private Mode _mode;
+    private int _resultTextHeight;
 
     public OverlayForm()
     {
@@ -73,10 +75,12 @@ internal sealed partial class OverlayForm : Form
         DarkScrollbars(_text);
         _textFrame.Controls.Add(_text);
 
+        _picker.Location = new Point(S(18), S(88));
+
         _copy.Click += (_, _) => CopyText();
         _close.Click += (_, _) => HideNow();
 
-        Controls.AddRange([_dot, _title, _detail, _wave, _textFrame, _copy, _close]);
+        Controls.AddRange([_dot, _title, _detail, _wave, _picker, _textFrame, _copy, _close]);
 
         _tick.Tick += (_, _) => OnTick();
         _autoHide.Tick += (_, _) =>
@@ -100,9 +104,14 @@ internal sealed partial class OverlayForm : Form
         }
     }
 
-    /// <summary>Registrazione in corso: forma d'onda del microfono e avviso se non arriva suono.</summary>
-    public void ShowRecording(string title, string hint, Func<float> level)
+    /// <summary>
+    /// Registrazione in corso: forma d'onda del microfono, avviso se non arriva suono e, se Claude è disponibile,
+    /// il selettore per scegliere al volo il prompt (o nessuno) da applicare a questa dettatura.
+    /// </summary>
+    public void ShowRecording(string title, string hint, Func<float> level,
+        IReadOnlyList<string>? prompts = null, string? selectedPrompt = null, Action<string?>? promptChosen = null)
     {
+        _picker.Configure(prompts, selectedPrompt, promptChosen);
         _recordingTitle = title;
         _levelSource = level;
         _maxLevel = 0;
@@ -113,17 +122,23 @@ internal sealed partial class OverlayForm : Form
     /// <summary>Lavoro in corso (trascrizione, riscrittura): il contatore dei secondi dice che non è bloccata.</summary>
     public void ShowWorking(string title) => Present(Orange, title, "0,0 s", Mode.Working, autoHideSeconds: 0);
 
-    /// <summary>Testo incollato, con il pulsante per copiarlo di nuovo.</summary>
-    public void ShowResult(string title, string detail, string text)
+    /// <summary>Testo incollato o da copiare, con il pulsante Copia.</summary>
+    /// <param name="sticky">Resta aperta finché non si preme Chiudi: per i risultati che non vengono incollati.</param>
+    public void ShowResult(string title, string detail, string text, bool sticky = false)
     {
+        text = text.ReplaceLineEndings(Environment.NewLine); // claude risponde con LF, la TextBox di Windows vuole CRLF
         _text.Text = text;
         _copy.Text = "Copia";
-        Present(Green, title, detail, Mode.Result, ResultSeconds);
+        // La casella cresce con il testo (una minuta è più lunga di una frase), fino a un massimo.
+        var measured = TextRenderer.MeasureText(text, _text.Font, new Size(_textFrame.Width - S(30), int.MaxValue),
+            TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl).Height;
+        _resultTextHeight = Math.Clamp(measured + S(20), S(64), S(320));
+        Present(Green, title, detail, Mode.Result, sticky ? 0 : ResultSeconds);
     }
 
     public void ShowMessage(string title, string message)
     {
-        _text.Text = message;
+        _text.Text = message.ReplaceLineEndings(Environment.NewLine);
         Present(Orange, title, string.Empty, Mode.Message, MessageSeconds);
     }
 
@@ -146,8 +161,12 @@ internal sealed partial class OverlayForm : Form
         _title.ForeColor = Fore;
         _detail.Text = detail;
         _wave.Visible = mode == Mode.Recording;
+        // Visible si legge falso finché la finestrella è nascosta: per l'altezza si usa il valore calcolato.
+        var showPicker = mode == Mode.Recording && _picker.HasPrompts;
+        _picker.Visible = showPicker;
+        if (mode != Mode.Recording) _picker.CloseMenu();
         _textFrame.Visible = mode is Mode.Result or Mode.Message;
-        _textFrame.Height = mode == Mode.Message ? S(58) : S(92);
+        _textFrame.Height = mode == Mode.Message ? S(58) : _resultTextHeight;
         _copy.Visible = mode == Mode.Result;
         _close.Visible = mode is Mode.Result or Mode.Message;
         if (mode != Mode.Recording) _levelSource = null;
@@ -158,7 +177,7 @@ internal sealed partial class OverlayForm : Form
         Height = mode switch
         {
             Mode.Working => S(48),
-            Mode.Recording => S(90),
+            Mode.Recording => showPicker ? S(132) : S(90),
             _ => buttonsTop + _close.Height + S(16),
         };
 
@@ -236,6 +255,100 @@ internal sealed partial class OverlayForm : Form
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool SetWindowPos(IntPtr hWnd, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);
+
+    /// <summary>Pillola "Claude: Correzione ▾" che apre il menu dei prompt; la prima voce è "Solo trascrizione".</summary>
+    private sealed class PromptPicker : PaintedControl
+    {
+        private readonly ContextMenuStrip _menu = new()
+        {
+            Renderer = new DarkMenuRenderer(),
+            BackColor = Theme.Surface,
+            ForeColor = Fore,
+            Font = Body(9.5f),
+            ShowImageMargin = true,
+        };
+        private IReadOnlyList<string> _prompts = [];
+        private string? _selected;
+        private Action<string?>? _chosen;
+
+        public PromptPicker()
+        {
+            Font = Body(9.5f);
+            Cursor = Cursors.Hand;
+            BackColor = Theme.Surface;
+            Height = S(32);
+        }
+
+        public bool HasPrompts => _prompts.Count > 0;
+
+        public void Configure(IReadOnlyList<string>? prompts, string? selected, Action<string?>? chosen)
+        {
+            _prompts = prompts ?? [];
+            _chosen = chosen;
+            Select(selected);
+        }
+
+        public void CloseMenu() => _menu.Close();
+
+        private void Select(string? name)
+        {
+            _selected = name;
+            Text = name is null ? "Solo trascrizione" : $"Claude · {name}";
+            Width = TextRenderer.MeasureText(Text, Font).Width + S(48);
+            Invalidate();
+        }
+
+        protected override void OnClick(EventArgs e)
+        {
+            base.OnClick(e);
+            _menu.Items.Clear();
+            AddItem("Solo trascrizione", null);
+            _menu.Items.Add(new ToolStripSeparator());
+            foreach (var prompt in _prompts) AddItem(prompt, prompt);
+            _menu.Show(this, new Point(0, Height + S(4)));
+        }
+
+        private void AddItem(string text, string? value)
+        {
+            var item = new ToolStripMenuItem(text) { Checked = value == _selected, ForeColor = Fore };
+            item.Click += (_, _) =>
+            {
+                Select(value);
+                _chosen?.Invoke(value);
+            };
+            _menu.Items.Add(item);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            g.Clear(BackColor);
+            var bounds = new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
+            var active = _selected is not null;
+            FillRounded(g, Hovered ? SurfaceHover : Field, bounds, bounds.Height / 2, active ? Accent : Border);
+
+            // Pallino d'accento quando Claude è attivo, grigio per la sola trascrizione.
+            var dot = S(7);
+            using (var brush = new SolidBrush(active ? Accent : Muted))
+            {
+                g.FillEllipse(brush, S(13), (Height - dot) / 2f, dot, dot);
+            }
+            TextRenderer.DrawText(g, Text, Font, new Rectangle(S(26), 0, Width - S(46), Height), Fore,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+
+            var cx = Width - S(16);
+            var cy = Height / 2f;
+            var arm = S(3);
+            using var pen = new Pen(Muted, Math.Max(1.5f, S(2) * 0.75f)) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+            g.DrawLines(pen, [new PointF(cx - arm, cy - arm / 2f), new PointF(cx, cy + arm / 2f), new PointF(cx + arm, cy - arm / 2f)]);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) _menu.Dispose();
+            base.Dispose(disposing);
+        }
+    }
 
     /// <summary>Pallino di stato con un alone che pulsa mentre l'app ascolta o lavora.</summary>
     private sealed class PulseDot : Control

@@ -110,6 +110,47 @@ public sealed class ClaudeOptions
 
     public int TimeoutSeconds { get; set; } = 30;
 
-    /// <summary>Prompt di sistema alternativo; vuoto usa <see cref="Cleanup.CleanupPrompt.Default"/>.</summary>
+    /// <summary>Prompt tra cui scegliere: nelle impostazioni il predefinito, dalla finestrella uno al volo.</summary>
+    public List<PromptPreset> Prompts { get; set; } = DefaultPrompts();
+
+    /// <summary>Nome del prompt predefinito, usato da "detta e riscrivi" e da "riscrivi la selezione".</summary>
+    public string SelectedPrompt { get; set; } = "Correzione";
+
+    /// <summary>
+    /// Prompt di sistema alternativo (solo da file, per esperti); vuoto usa <see cref="Cleanup.CleanupPrompt.System"/>.
+    /// Deve spiegare a claude i tag &lt;istruzione&gt; e &lt;dettato&gt; del messaggio.
+    /// </summary>
     public string? SystemPrompt { get; set; }
+
+    /// <summary>Il prompt con quel nome; se non c'è, il predefinito o il primo della lista.</summary>
+    public PromptPreset FindPrompt(string? name) =>
+        Prompts.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))
+        ?? Prompts.FirstOrDefault(p => string.Equals(p.Name, SelectedPrompt, StringComparison.OrdinalIgnoreCase))
+        ?? Prompts.FirstOrDefault()
+        ?? new PromptPreset { Name = "Correzione", Instructions = Cleanup.CleanupPrompt.Correction };
+
+    public static List<PromptPreset> DefaultPrompts() =>
+    [
+        new() { Name = "Correzione", Instructions = Cleanup.CleanupPrompt.Correction },
+        new()
+        {
+            Name = "Minuta",
+            Instructions = "Fai una minuta della registrazione, predisponi un riassunto breve, una lista di argomenti, una o più cta. " +
+                           "Devi essere super conciso e non fare domande all'utente perché il risultato verrà mostrato in una casella di sola lettura.",
+            Paste = false,
+        },
+        new() { Name = "Traduzione in inglese", Instructions = "Traduci in inglese la registrazione." },
+        new() { Name = "Pirata ubriaco", Instructions = "Riscrivi la registrazione come la direbbe un pirata ubriaco." },
+    ];
+}
+
+/// <summary>Un prompt per claude: cosa fare del testo dettato.</summary>
+public sealed class PromptPreset
+{
+    public string Name { get; set; } = string.Empty;
+
+    public string Instructions { get; set; } = string.Empty;
+
+    /// <summary>Incolla il risultato nella finestra attiva; se falso resta nella finestrella, da copiare.</summary>
+    public bool Paste { get; set; } = true;
 }

@@ -1,4 +1,4 @@
-using Dettatura.Core;
+﻿using Dettatura.Core;
 using Dettatura.Core.Transcription;
 using static Dettatura.App.Theme;
 
@@ -29,7 +29,10 @@ internal sealed class SettingsForm : Form
     private readonly ToggleSwitch _warmProcess = new();
     private readonly NumericUpDown _timeout = Number(5, 300, 5);
     private readonly TextBox _claudeExecutable = new();
-    private readonly TextBox _systemPrompt = Multiline();
+    private readonly DarkComboBox _defaultPrompt = Combo(260);
+    private readonly ModernButton _addPrompt = new("+ Aggiungi prompt");
+    private readonly List<PromptEditor> _promptEditors = [];
+    private Page? _claudePage;
 
     private readonly ToggleSwitch _appendSpace = new();
     private readonly ToggleSwitch _restoreClipboard = new();
@@ -137,15 +140,63 @@ internal sealed class SettingsForm : Form
             new SettingRow("Modello", $"Nome del file in {AppPaths.ModelsDir} oppure percorso completo.", Frame(_whisperModel, 0, S(36)), below: true),
             new SettingRow("Contesto", "Aiuta punteggiatura, nomi e termini tecnici ricorrenti.", Frame(_whisperPrompt, 0, S(74)), below: true)));
 
-    private Page BuildClaudePage() => new(
-        new SettingsCard(
-            new SettingRow("Modello", "sonnet è il più fedele al testo dettato; haiku è più veloce ma a volte riformula.", _claudeModel),
-            new SettingRow("Processo pronto", "Tiene avviato un processo claude: la riscrittura risponde in circa 2 secondi invece di 4-5.", _warmProcess),
-            new SettingRow("Timeout (secondi)", "Attesa massima della risposta, poi incolla la trascrizione grezza.", Frame(_timeout, S(110), S(34)))),
-        Section("Avanzate"),
-        new SettingsCard(
-            new SettingRow("Eseguibile", "\"claude\" la cerca nel PATH e in %USERPROFILE%\\.local\\bin.", Frame(_claudeExecutable, 0, S(36)), below: true),
-            new SettingRow("Prompt personalizzato", "Vuoto usa il prompt da correttore di bozze predefinito.", Frame(_systemPrompt, 0, S(130)), below: true)));
+    private Page BuildClaudePage()
+    {
+        _addPrompt.Click += (_, _) => AddPromptEditor(new PromptPreset { Name = "Nuovo prompt" }, focus: true);
+        _claudePage = new Page(
+            new SettingsCard(
+                new SettingRow("Prompt predefinito",
+                    "Usato da Detta e riscrivi e da Riscrivi la selezione. Mentre registri puoi sceglierne un altro dalla finestrella.",
+                    _defaultPrompt)),
+            Section("I tuoi prompt"),
+            _addPrompt,
+            Section("Modello"),
+            new SettingsCard(
+                new SettingRow("Modello", "sonnet è il più fedele al testo dettato; haiku è più veloce ma a volte riformula.", _claudeModel),
+                new SettingRow("Processo pronto", "Tiene avviato un processo claude: la riscrittura risponde in circa 2 secondi invece di 4-5.", _warmProcess),
+                new SettingRow("Timeout (secondi)", "Attesa massima della risposta, poi incolla la trascrizione grezza.", Frame(_timeout, S(110), S(34)))),
+            Section("Avanzate"),
+            new SettingsCard(
+                new SettingRow("Eseguibile", "\"claude\" la cerca nel PATH e in %USERPROFILE%\\.local\\bin.", Frame(_claudeExecutable, 0, S(36)), below: true)));
+        return _claudePage;
+    }
+
+    private void AddPromptEditor(PromptPreset preset, bool focus = false)
+    {
+        var editor = new PromptEditor(preset, RemovePromptEditor, RefreshDefaultPrompt);
+        _promptEditors.Add(editor);
+        _claudePage!.Controls.Add(editor.Card);
+        _claudePage.Controls.SetChildIndex(editor.Card, _claudePage.Controls.GetChildIndex(_addPrompt));
+        RefreshDefaultPrompt();
+        if (!focus) return;
+        _claudePage.PerformLayout();
+        _claudePage.ScrollControlIntoView(editor.Card);
+        editor.NameBox.Focus();
+        editor.NameBox.SelectAll();
+    }
+
+    private void RemovePromptEditor(PromptEditor editor)
+    {
+        if (_promptEditors.Count == 1)
+        {
+            ShowError("Serve almeno un prompt.", 2);
+            return;
+        }
+        _promptEditors.Remove(editor);
+        _claudePage!.Controls.Remove(editor.Card);
+        editor.Card.Dispose();
+        RefreshDefaultPrompt();
+    }
+
+    /// <summary>Ricostruisce l'elenco del predefinito quando si aggiunge, rinomina o elimina un prompt.</summary>
+    private void RefreshDefaultPrompt()
+    {
+        var selected = _defaultPrompt.SelectedItem as PromptEditor;
+        _defaultPrompt.Items.Clear();
+        foreach (var editor in _promptEditors) _defaultPrompt.Items.Add(editor);
+        _defaultPrompt.SelectedItem = selected is not null && _promptEditors.Contains(selected) ? selected : _promptEditors.FirstOrDefault();
+        _defaultPrompt.Invalidate();
+    }
 
     private Page BuildPastePage() => new(
         new SettingsCard(
@@ -284,7 +335,9 @@ internal sealed class SettingsForm : Form
         _warmProcess.Checked = _settings.Claude.UseWarmProcess;
         _timeout.Value = Math.Clamp(_settings.Claude.TimeoutSeconds, (int)_timeout.Minimum, (int)_timeout.Maximum);
         _claudeExecutable.Text = _settings.Claude.Executable;
-        _systemPrompt.Text = _settings.Claude.SystemPrompt ?? string.Empty;
+        foreach (var preset in _settings.Claude.Prompts) AddPromptEditor(preset);
+        var defaultName = _settings.Claude.FindPrompt(null).Name;
+        _defaultPrompt.SelectedItem = _promptEditors.FirstOrDefault(e => e.ToString() == defaultName) ?? _promptEditors.FirstOrDefault();
 
         _appendSpace.Checked = _settings.AppendSpace;
         _restoreClipboard.Checked = _settings.RestoreClipboard;
@@ -318,6 +371,17 @@ internal sealed class SettingsForm : Form
             ShowError("Modello ed eseguibile di Claude non possono essere vuoti.", 2);
             return;
         }
+        var names = _promptEditors.Select(e => e.NameBox.Text.Trim()).ToList();
+        if (names.Any(string.IsNullOrEmpty) || _promptEditors.Any(e => string.IsNullOrWhiteSpace(e.InstructionsBox.Text)))
+        {
+            ShowError("Ogni prompt deve avere un nome e delle istruzioni.", 2);
+            return;
+        }
+        if (names.Distinct(StringComparer.OrdinalIgnoreCase).Count() < names.Count)
+        {
+            ShowError("Due prompt hanno lo stesso nome.", 2);
+            return;
+        }
 
         _settings.Mode = _toggle.IsSelected ? DictationMode.Toggle : DictationMode.PushToTalk;
         _settings.HotkeyDictate = _hotkeyDictate.Text;
@@ -335,7 +399,8 @@ internal sealed class SettingsForm : Form
         _settings.Claude.UseWarmProcess = _warmProcess.Checked;
         _settings.Claude.TimeoutSeconds = (int)_timeout.Value;
         _settings.Claude.Executable = _claudeExecutable.Text.Trim();
-        _settings.Claude.SystemPrompt = string.IsNullOrWhiteSpace(_systemPrompt.Text) ? null : _systemPrompt.Text.Trim();
+        _settings.Claude.Prompts = _promptEditors.Select(e => e.ToPreset()).ToList();
+        _settings.Claude.SelectedPrompt = (_defaultPrompt.SelectedItem as PromptEditor)?.ToString() ?? names[0];
 
         _settings.AppendSpace = _appendSpace.Checked;
         _settings.RestoreClipboard = _restoreClipboard.Checked;
@@ -409,6 +474,48 @@ internal sealed class SettingsForm : Form
     private static TextBox Multiline() =>
         new() { Multiline = true, ScrollBars = ScrollBars.None, AcceptsReturn = true };
 
+    /// <summary>Scheda di modifica di un prompt: nome con pulsante Elimina, istruzioni, incolla sì/no.</summary>
+    private sealed class PromptEditor
+    {
+        public PromptEditor(PromptPreset preset, Action<PromptEditor> remove, Action renamed)
+        {
+            NameBox.Text = preset.Name;
+            InstructionsBox.Text = preset.Instructions.ReplaceLineEndings(Environment.NewLine); // nel file JSON gli a capo sono LF
+            PasteSwitch.Checked = preset.Paste;
+            NameBox.TextChanged += (_, _) => renamed();
+
+            var delete = new ModernButton("Elimina");
+            delete.Click += (_, _) => remove(this);
+            var nameFrame = Frame(NameBox, S(260), S(36));
+            var nameRow = new Panel { BackColor = Surface, Size = new Size(nameFrame.Width + S(10) + delete.Width, S(36)) };
+            nameFrame.Location = Point.Empty;
+            delete.Location = new Point(nameFrame.Right + S(10), (nameRow.Height - delete.Height) / 2);
+            nameRow.Controls.AddRange([nameFrame, delete]);
+
+            Card = new SettingsCard(
+                new SettingRow("Nome", null, nameRow),
+                new SettingRow("Istruzioni", "Cosa deve fare Claude con il testo dettato.", Frame(InstructionsBox, 0, S(96)), below: true),
+                new SettingRow("Incolla il risultato", "Spento: il risultato resta nella finestrella, da copiare. Utile per minute e riassunti.", PasteSwitch));
+        }
+
+        public TextBox NameBox { get; } = new();
+
+        public TextBox InstructionsBox { get; } = Multiline();
+
+        public ToggleSwitch PasteSwitch { get; } = new();
+
+        public SettingsCard Card { get; }
+
+        public PromptPreset ToPreset() => new()
+        {
+            Name = NameBox.Text.Trim(),
+            Instructions = InstructionsBox.Text.Trim(),
+            Paste = PasteSwitch.Checked,
+        };
+
+        public override string ToString() => string.IsNullOrWhiteSpace(NameBox.Text) ? "(senza nome)" : NameBox.Text.Trim();
+    }
+
     /// <summary>Pagina scorrevole: impila schede e titoletti di sezione a tutta larghezza.</summary>
     private sealed class Page : Panel
     {
@@ -431,12 +538,14 @@ internal sealed class SettingsForm : Form
             try
             {
                 var x = S(28);
-                var width = ClientSize.Width - 2 * x;
+                // Si lascia sempre il posto della barra verticale: se compare dopo, le schede non sforano a destra.
+                var scrollbar = VerticalScroll.Visible ? 0 : SystemInformation.VerticalScrollBarWidth;
+                var width = ClientSize.Width - 2 * x - scrollbar;
                 var y = 0;
                 foreach (Control item in Controls)
                 {
                     var height = item is SettingsCard card ? card.Arrange(width) : item.Height;
-                    if (item is not SettingsCard) item.Width = width;
+                    if (item is not SettingsCard and not ModernButton) item.Width = width;
                     item.Location = new Point(x, y + AutoScrollPosition.Y);
                     y += height + (item is SettingsCard ? S(18) : S(8));
                 }

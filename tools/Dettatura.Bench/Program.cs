@@ -1,7 +1,7 @@
 ﻿// Misura la pipeline: trascrizione Whisper dei file audio in samples/ e riscrittura con la CLI claude
 // delle frasi in samples/trascrizioni.txt, confrontando un processo nuovo per ogni chiamata
 // con il processo di riserva già avviato. Stampa anche prima/dopo per controllare la qualità.
-// Uso: dotnet run -c Release --project tools/Dettatura.Bench [-- [modello] [--gpu N] [--solo-whisper]]   (default: sonnet)
+// Uso: dotnet run -c Release --project tools/Dettatura.Bench [-- [modello] [--gpu N] [--solo-whisper] [--prompt "Nome"]]   (default: sonnet)
 
 using System.Diagnostics;
 using Dettatura.Core;
@@ -20,7 +20,11 @@ var settings = new DettaturaSettings();
 var gpuIndex = Array.IndexOf(args, "--gpu");
 var gpu = gpuIndex >= 0 ? int.Parse(args[gpuIndex + 1]) : -1;
 var onlyWhisper = args.Contains("--solo-whisper");
-var model = args.FirstOrDefault(a => !a.StartsWith("--") && !int.TryParse(a, out _)) ?? settings.Claude.Model;
+var promptIndex = Array.IndexOf(args, "--prompt");
+var preset = settings.Claude.FindPrompt(promptIndex >= 0 ? args[promptIndex + 1] : null);
+var model = args.Where((a, i) => !a.StartsWith("--") && !int.TryParse(a, out _) && (promptIndex < 0 || i != promptIndex + 1))
+    .FirstOrDefault() ?? settings.Claude.Model;
+Console.WriteLine($"Prompt: {preset.Name}");
 
 Console.WriteLine($"Modello: {settings.WhisperModel}");
 var load = Stopwatch.StartNew();
@@ -67,7 +71,7 @@ async Task<List<long>> MeasureCleanupAsync(ClaudeOptions options, int runs, Time
         await Task.Delay(pause);
         var input = sentences[i % sentences.Count];
         var sw = Stopwatch.StartNew();
-        var cleaned = await cleaner.CleanAsync(input);
+        var cleaned = await cleaner.CleanAsync(input, preset.Instructions);
         times.Add(sw.ElapsedMilliseconds);
         Console.WriteLine($"\n[{(options.UseWarmProcess ? "riserva" : "nuovo")}, {sw.ElapsedMilliseconds} ms]");
         Console.WriteLine($"  prima: {input}");

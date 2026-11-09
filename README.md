@@ -39,7 +39,20 @@ L'icona nel tray è grigia a riposo, rossa mentre ascolta, arancione mentre lavo
 
 ### La riscrittura
 
-Whisper large-v3-turbo dà già una buona trascrizione italiana con punteggiatura, quindi Claude non è applicato a ogni dettatura. Quando lo chiedi, riceve il testo tra tag `<dettato>` con un prompt da correttore di bozze: interventi minimi (punteggiatura, esitazioni, parole ripetute per sbaglio, autocorrezioni come "alle tre, anzi alle quattro"), stesse parole e stesso ordine, **mai cambiare il senso né aggiungere nulla**; nel dubbio lascia la parola originale. Il testo dettato è trattato come materiale da ripulire, non come istruzioni: se detti una domanda, viene ripulita, non risposta.
+Whisper large-v3-turbo dà già una buona trascrizione italiana con punteggiatura, quindi Claude non è applicato a ogni dettatura. Quando lo chiedi, applica uno dei **prompt** configurati.
+
+### I prompt
+
+Nella pagina Claude delle impostazioni si gestisce un elenco di prompt (nome, istruzioni, incolla sì/no) e si sceglie il predefinito, usato da `Ctrl+Alt+Shift+D` e `Ctrl+Alt+R`; il predefinito si cambia anche dal menu del tray. Durante la registrazione la finestrella mostra un selettore: si può scegliere un altro prompt solo per quella dettatura, oppure **Solo trascrizione**; vale anche partendo da `Ctrl+Alt+D`. Prompt inclusi:
+
+| Prompt | Cosa fa | Incolla |
+|---|---|---|
+| Correzione | correttore di bozze, interventi minimi | sì |
+| Minuta | riassunto breve, argomenti, call to action | no: resta nella finestrella, da copiare |
+| Traduzione in inglese | traduce la dettatura | sì |
+| Pirata ubriaco | riscrive come un pirata ubriaco | sì |
+
+Il prompt di sistema della CLI è generale e fisso; l'istruzione del prompt scelto viaggia nel messaggio tra tag `<istruzione>`, accanto al testo tra tag `<dettato>`. Così lo stesso processo `claude` già avviato serve qualunque prompt e cambiarlo non costa latenza. Il prompt Correzione segue queste regole: interventi minimi (punteggiatura, esitazioni, parole ripetute per sbaglio, autocorrezioni come "alle tre, anzi alle quattro"), stesse parole e stesso ordine, **mai cambiare il senso né aggiungere nulla**; nel dubbio lascia la parola originale. Il testo dettato è trattato come materiale da ripulire, non come istruzioni: se detti una domanda, viene ripulita, non risposta.
 
 La CLI viene avviata con `--tools ""` (nessuno strumento: non può leggere file né eseguire comandi), `--safe-mode` (ignora CLAUDE.md, hook e plugin dell'utente), `--strict-mcp-config`, `--no-session-persistence` e una cartella di lavoro vuota.
 
@@ -90,7 +103,7 @@ Al primo avvio l'app scarica il modello Whisper (~550 MB) in `%LOCALAPPDATA%\Det
 
 ### Finestra Impostazioni
 
-Doppio clic sull'icona del tray, oppure **Impostazioni...** dal menu. Quattro schede: **Dettatura** (push-to-talk o avvio/stop, scorciatoie da registrare premendole nel campo), **Trascrizione** (microfono, GPU, lingua, modello e contesto di Whisper), **Claude** (modello, processo di riserva, timeout, eseguibile, prompt personalizzato), **Incolla e finestrella**. Le modifiche valgono appena premi Salva: l'app ricarica solo quello che serve (Whisper se cambiano GPU, lingua o modello; il processo `claude` se cambiano le sue opzioni). Mentre la finestra è aperta le scorciatoie sono sospese, così si possono premere nei campi. Il link **Apri settings.json** apre il file per le modifiche a mano.
+Doppio clic sull'icona del tray, oppure **Impostazioni...** dal menu. Quattro schede: **Dettatura** (push-to-talk o avvio/stop, scorciatoie da registrare premendole nel campo), **Trascrizione** (microfono, GPU, lingua, modello e contesto di Whisper), **Claude** (prompt e predefinito, modello, processo di riserva, timeout, eseguibile), **Incolla e finestrella**. Le modifiche valgono appena premi Salva: l'app ricarica solo quello che serve (Whisper se cambiano GPU, lingua o modello; il processo `claude` se cambiano le sue opzioni). Mentre la finestra è aperta le scorciatoie sono sospese, così si possono premere nei campi. Il link **Apri settings.json** apre il file per le modifiche a mano.
 
 ### Impostazioni principali
 
@@ -106,7 +119,8 @@ Doppio clic sull'icona del tray, oppure **Impostazioni...** dal menu. Quattro sc
 | `ShowOverlay` | `true` | finestrella di stato in primo piano |
 | `Claude.Model` | `sonnet` | `haiku` è più veloce ma a volte riformula |
 | `Claude.UseWarmProcess` | `true` | tiene un processo `claude` pronto per la dettatura successiva |
-| `Claude.SystemPrompt` | vuoto | sostituisce il prompt di riscrittura |
+| `Claude.Prompts` / `Claude.SelectedPrompt` | 4 prompt / `Correzione` | elenco dei prompt (`Name`, `Instructions`, `Paste`) e predefinito |
+| `Claude.SystemPrompt` | vuoto | solo da file: sostituisce il prompt di sistema generale (deve spiegare i tag `<istruzione>` e `<dettato>`) |
 | `AppendSpace` / `RestoreClipboard` | `true` | spazio dopo il testo incollato / appunti ripristinati |
 
 Le modifiche fatte a mano nel file valgono al riavvio dell'app; quelle dalla finestra Impostazioni subito.
