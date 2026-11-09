@@ -54,6 +54,13 @@ internal sealed class HotkeyWindow : NativeWindow, IDisposable
         _handlers[id] = handler;
     }
 
+    /// <summary>Libera tutte le scorciatoie: serve mentre si sceglie una scorciatoia nuova nelle impostazioni.</summary>
+    public void UnregisterAll()
+    {
+        foreach (var id in _handlers.Keys) Native.UnregisterHotKey(Handle, id);
+        _handlers.Clear();
+    }
+
     protected override void WndProc(ref Message m)
     {
         if (m.Msg == Native.WM_HOTKEY && _handlers.TryGetValue((int)m.WParam, out var handler))
@@ -66,8 +73,7 @@ internal sealed class HotkeyWindow : NativeWindow, IDisposable
 
     public void Dispose()
     {
-        foreach (var id in _handlers.Keys) Native.UnregisterHotKey(Handle, id);
-        _handlers.Clear();
+        UnregisterAll();
         DestroyHandle();
     }
 }

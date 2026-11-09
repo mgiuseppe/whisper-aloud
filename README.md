@@ -20,6 +20,8 @@ scorciatoia premuta ──► microfono (NAudio, 16 kHz mono)
 | `Ctrl+Alt+Shift+D` (tieni premuto) | detta, riscrivi con Claude, incolla |
 | `Ctrl+Alt+R` | riscrive con Claude il testo selezionato e lo sostituisce |
 
+In alternativa al push-to-talk c'è la modalità **avvio/stop** (`Mode: Toggle`): una pressione avvia la registrazione, la successiva la termina. È comoda per le dettature lunghe.
+
 Le scorciatoie con `Spazio` sono spesso già prese (Superwhisper, PowerToys): se una scorciatoia è occupata l'app lo segnala e registra comunque le altre.
 
 ### La finestrella di stato
@@ -86,10 +88,15 @@ dotnet run -c Release --project src/Dettatura.App
 
 Al primo avvio l'app scarica il modello Whisper (~550 MB) in `%LOCALAPPDATA%\Dettatura\models` e crea le impostazioni in `%APPDATA%\Dettatura\settings.json`. Dal menu dell'icona nel tray si aprono impostazioni, registro latenze e log errori.
 
+### Finestra Impostazioni
+
+Doppio clic sull'icona del tray, oppure **Impostazioni...** dal menu. Quattro schede: **Dettatura** (push-to-talk o avvio/stop, scorciatoie da registrare premendole nel campo), **Trascrizione** (microfono, GPU, lingua, modello e contesto di Whisper), **Claude** (modello, processo di riserva, timeout, eseguibile, prompt personalizzato), **Incolla e finestrella**. Le modifiche valgono appena premi Salva: l'app ricarica solo quello che serve (Whisper se cambiano GPU, lingua o modello; il processo `claude` se cambiano le sue opzioni). Mentre la finestra è aperta le scorciatoie sono sospese, così si possono premere nei campi. Il link **Apri settings.json** apre il file per le modifiche a mano.
+
 ### Impostazioni principali
 
 | Chiave | Default | Note |
 |---|---|---|
+| `Mode` | `PushToTalk` | `PushToTalk` (tieni premuto) o `Toggle` (premi per iniziare e per finire) |
 | `HotkeyDictate` / `HotkeyDictateWithClaude` / `HotkeyCleanSelection` | vedi sopra | formato `Ctrl+Alt+D`, nomi tasti dell'enum `Keys` (`Space`, `F9`, ...) |
 | `Language` | `it` | lingua di Whisper |
 | `WhisperModel` | `ggml-large-v3-turbo-q5_0.bin` | nome in `models` o percorso assoluto |
@@ -102,14 +109,14 @@ Al primo avvio l'app scarica il modello Whisper (~550 MB) in `%LOCALAPPDATA%\Det
 | `Claude.SystemPrompt` | vuoto | sostituisce il prompt di riscrittura |
 | `AppendSpace` / `RestoreClipboard` | `true` | spazio dopo il testo incollato / appunti ripristinati |
 
-Le modifiche valgono al riavvio dell'app.
+Le modifiche fatte a mano nel file valgono al riavvio dell'app; quelle dalla finestra Impostazioni subito.
 
 ## Struttura
 
 | Progetto | Contenuto |
 |---|---|
 | `src/Dettatura.Core` | trascrizione (`WhisperTranscriber`), riscrittura (`ClaudeCleaner`, protocollo stream-json), impostazioni, registro latenze |
-| `src/Dettatura.App` | app WinForms nel tray: `RegisterHotKey`, registrazione NAudio, finestrella di stato, incolla con `SendInput` |
+| `src/Dettatura.App` | app WinForms nel tray: `RegisterHotKey`, registrazione NAudio, finestrella di stato, finestra Impostazioni, incolla con `SendInput` |
 | `tools/Dettatura.Bench` | benchmark della pipeline su file audio |
 | `tests/Dettatura.Core.Tests` | test xUnit di protocollo, prompt e argomenti della CLI |
 | `samples` | tre frasi sintetizzate con la voce Elsa di Windows (per i tempi di Whisper) e `trascrizioni.txt` (per qualità e tempi della riscrittura) |

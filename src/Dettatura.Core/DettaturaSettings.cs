@@ -7,6 +7,9 @@ namespace Dettatura.Core;
 /// <summary>Impostazioni utente, salvate in %APPDATA%\Dettatura\settings.json.</summary>
 public sealed class DettaturaSettings
 {
+    /// <summary>Tenere premuta la scorciatoia mentre si parla, oppure premerla una volta per iniziare e una per finire.</summary>
+    public DictationMode Mode { get; set; } = DictationMode.PushToTalk;
+
     /// <summary>Tieni premuto per dettare; al rilascio incolla la trascrizione di Whisper così com'è.</summary>
     public string HotkeyDictate { get; set; } = "Ctrl+Alt+D";
 
@@ -50,10 +53,15 @@ public sealed class DettaturaSettings
         DefaultIgnoreCondition = JsonIgnoreCondition.Never,
         // Il file si modifica a mano: il "+" delle scorciatoie resta leggibile invece di diventare una sequenza \u.
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        Converters = { new JsonStringEnumConverter() },
     };
 
     public string ResolveModelPath() =>
         Path.IsPathRooted(WhisperModel) ? WhisperModel : Path.Combine(AppPaths.ModelsDir, WhisperModel);
+
+    /// <summary>Copia indipendente, da modificare nella finestra Impostazioni senza toccare quella in uso.</summary>
+    public DettaturaSettings Clone() =>
+        JsonSerializer.Deserialize<DettaturaSettings>(JsonSerializer.Serialize(this, JsonOptions), JsonOptions)!;
 
     public void Save(string? path = null) =>
         File.WriteAllText(path ?? AppPaths.SettingsFile, JsonSerializer.Serialize(this, JsonOptions));
@@ -72,6 +80,15 @@ public sealed class DettaturaSettings
         settings.Save(path);
         return settings;
     }
+}
+
+public enum DictationMode
+{
+    /// <summary>Si registra finché la scorciatoia resta premuta.</summary>
+    PushToTalk,
+
+    /// <summary>Una pressione avvia la registrazione, la successiva la termina.</summary>
+    Toggle,
 }
 
 public sealed class ClaudeOptions

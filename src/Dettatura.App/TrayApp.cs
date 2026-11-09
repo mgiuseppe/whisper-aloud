@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using Dettatura.Core;
 using Dettatura.Core.Cleanup;
 using Dettatura.Core.Transcription;
@@ -10,7 +11,7 @@ internal sealed class TrayApp : ApplicationContext
 {
     private const string Title = "Dettatura";
 
-    private readonly DettaturaSettings _settings;
+    private DettaturaSettings _settings;
     private readonly NotifyIcon _tray;
     private readonly ToolStripMenuItem _statusItem;
     private readonly HotkeyWindow _hotkeys = new();
@@ -20,7 +21,8 @@ internal sealed class TrayApp : ApplicationContext
     private readonly Icon _recordingIcon = TrayIcons.Circle(Color.FromArgb(220, 40, 40));
     private readonly Icon _workingIcon = TrayIcons.Circle(Color.FromArgb(235, 160, 20));
 
-    private readonly OverlayForm? _overlay;
+    private OverlayForm? _overlay;
+    private SettingsForm? _settingsForm;
     private readonly ToolStripMenuItem _copyLastItem;
     private string? _lastText;
     private ClaudeCleaner? _cleaner;
@@ -43,13 +45,14 @@ internal sealed class TrayApp : ApplicationContext
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_copyLastItem);
         menu.Items.Add(BuildMicrophoneMenu());
-        menu.Items.Add("Impostazioni", null, (_, _) => OpenFile(AppPaths.SettingsFile));
+        menu.Items.Add("Impostazioni...", null, (_, _) => OpenSettings());
         menu.Items.Add("Registro latenze", null, (_, _) => OpenFile(AppPaths.LatencyLog));
         menu.Items.Add("Log errori", null, (_, _) => OpenFile(AppPaths.AppLog));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Esci", null, (_, _) => ExitThread());
 
         _tray = new NotifyIcon { Icon = _workingIcon, Text = Title, ContextMenuStrip = menu, Visible = true };
+        _tray.DoubleClick += (_, _) => OpenSettings();
         _releaseTimer.Tick += OnReleaseTick;
 
         AppLog.Info($"avvio, microfono: {MicRecorder.DeviceName(settings.MicrophoneDevice)}");
@@ -153,7 +156,15 @@ internal sealed class TrayApp : ApplicationContext
     private void StartDictation(Hotkey hotkey, bool cleanup)
     {
         AppLog.Info($"{hotkey.Text} premuta (occupata: {_busy}, in registrazione: {_mic.IsRecording}, whisper pronto: {_transcriber is not null})");
-        if (_busy || _mic.IsRecording) return;
+        // Modalità avvio/stop: la seconda pressione (di una delle due scorciatoie di dettatura) termina.
+        if (_mic.IsRecording && _settings.Mode == DictationMode.Toggle && _heldHotkey is not null)
+        {
+            var held = _heldHotkey.Text;
+            _heldHotkey = null;
+            _ = FinishDictationAsync(_heldClean, held);
+            return;
+        }
+        if (_busy || _mic.IsRecording || _settingsForm is not null) return;
         if (_transcriber is null)
         {
             Notify("Non ancora pronta", "Il modello Whisper si sta ancora caricando: riprova tra qualche secondo.");
@@ -175,9 +186,10 @@ internal sealed class TrayApp : ApplicationContext
         _recording.Restart();
         _tray.Icon = _recordingIcon;
         SetStatus(cleanup ? "In ascolto (con riscrittura Claude)" : "In ascolto");
+        var toggle = _settings.Mode == DictationMode.Toggle;
         _overlay?.ShowRecording(cleanup ? "In ascolto · poi riscrive Claude" : "In ascolto",
-            $"rilascia {hotkey.Text}", () => _mic.Level);
-        _releaseTimer.Start();
+            toggle ? $"{hotkey.Text} per finire" : $"rilascia {hotkey.Text}", () => _mic.Level);
+        if (!toggle) _releaseTimer.Start();
     }
 
     /// <summary>RegisterHotKey segnala solo la pressione: il rilascio si rileva controllando il tasto.</summary>
@@ -196,7 +208,12 @@ internal sealed class TrayApp : ApplicationContext
         _recording.Stop();
         var rms = WhisperTranscriber.Rms(samples);
         AppLog.Info($"rilasciata dopo {_recording.ElapsedMilliseconds} ms, {samples.Length} campioni, livello {rms:0.0000}");
-        if (_recording.ElapsedMilliseconds < _settings.MinRecordingMs || _transcriber is null)
+        if (_transcriber is null)
+        {
+            SetIdle();
+            return;
+        }
+        if (_settings.Mode == DictationMode.PushToTalk && _recording.ElapsedMilliseconds < _settings.MinRecordingMs)
         {
             Notify("Pressione troppo breve", $"Tieni premuto {hotkey} mentre parli e rilascia quando hai finito.");
             SetIdle();
@@ -306,6 +323,88 @@ internal sealed class TrayApp : ApplicationContext
         }
     }
 
+    private void OpenSettings()
+    {
+        if (_settingsForm is not null)
+        {
+            _settingsForm.Activate();
+            return;
+        }
+        if (_busy || _mic.IsRecording)
+        {
+            Notify("Un momento", "Le impostazioni si aprono a dettatura finita.");
+            return;
+        }
+
+        // Scorciatoie libere mentre la finestra è aperta: così si possono premere nei campi per sceglierne di nuove.
+        _hotkeys.UnregisterAll();
+        try
+        {
+            using (_settingsForm = new SettingsForm(_settings))
+            {
+                if (_settingsForm.ShowDialog() == DialogResult.OK && _settingsForm.Result is { } updated) ApplySettings(updated);
+            }
+        }
+        finally
+        {
+            _settingsForm = null;
+            RegisterHotkeys();
+        }
+    }
+
+    /// <summary>Applica le impostazioni salvate senza riavvio: ricarica solo i componenti toccati.</summary>
+    private void ApplySettings(DettaturaSettings updated)
+    {
+        var old = _settings;
+        _settings = updated;
+        try
+        {
+            _settings.Save();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Report(new InvalidOperationException($"Impostazioni non salvate su disco: {e.Message}", e));
+        }
+        AppLog.Info($"impostazioni salvate (modalità {updated.Mode}, microfono {MicRecorder.DeviceName(updated.MicrophoneDevice)}, GPU {updated.GpuDevice})");
+
+        if (old.MicrophoneDevice != updated.MicrophoneDevice)
+        {
+            _mic.Dispose();
+            _mic = new MicRecorder(updated.MicrophoneDevice);
+        }
+
+        if (old.ShowOverlay != updated.ShowOverlay)
+        {
+            _overlay?.Dispose();
+            _overlay = updated.ShowOverlay ? new OverlayForm() : null;
+        }
+
+        if (JsonSerializer.Serialize(old.Claude) != JsonSerializer.Serialize(updated.Claude))
+        {
+            var previous = _cleaner;
+            _cleaner = null;
+            if (previous is not null) _ = previous.DisposeAsync().AsTask();
+            StartCleaner();
+        }
+
+        if (old.GpuDevice != updated.GpuDevice || old.Language != updated.Language ||
+            old.WhisperModel != updated.WhisperModel || old.WhisperPrompt != updated.WhisperPrompt)
+        {
+            _ = ReloadTranscriberAsync();
+        }
+    }
+
+    private async Task ReloadTranscriberAsync()
+    {
+        var previous = _transcriber;
+        _transcriber = null;
+        _tray.Icon = _workingIcon;
+        _overlay?.ShowWorking("Ricarico Whisper con le nuove impostazioni…");
+        if (previous is not null) await previous.DisposeAsync();
+        await LoadTranscriberAsync();
+        if (_transcriber is not null) _overlay?.ShowMessage("Pronta", $"Whisper ricaricato ({WhisperTranscriber.LoadedRuntime}).");
+    }
+
     private void Remember(string text)
     {
         _lastText = text;
@@ -346,7 +445,7 @@ internal sealed class TrayApp : ApplicationContext
         else _tray.ShowBalloonTip(5000, Title, e.Message, ToolTipIcon.Error);
     }
 
-    private static void OpenFile(string path)
+    internal static void OpenFile(string path)
     {
         if (!File.Exists(path)) File.WriteAllText(path, string.Empty);
         Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });

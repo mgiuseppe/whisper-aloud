@@ -14,12 +14,17 @@ public static class VulkanDevices
     private const int DeviceNameOffset = 20;
 
     /// <summary>Indice e nome della prima GPU dedicata; null se non c'è o Vulkan non è installato.</summary>
-    public static (int Index, string Name)? FindDiscreteGpu()
+    public static (int Index, string Name)? FindDiscreteGpu() =>
+        List().Where(d => d.Discrete).Select(d => ((int, string)?)(d.Index, d.Name)).FirstOrDefault();
+
+    /// <summary>Tutte le GPU Vulkan nell'ordine di whisper.cpp; vuoto se Vulkan non è installato.</summary>
+    public static IReadOnlyList<(int Index, string Name, bool Discrete)> List()
     {
+        var result = new List<(int, string, bool)>();
         try
         {
             var info = new InstanceCreateInfo { SType = 1 };
-            if (vkCreateInstance(ref info, IntPtr.Zero, out var instance) != 0) return null;
+            if (vkCreateInstance(ref info, IntPtr.Zero, out var instance) != 0) return result;
             var properties = Marshal.AllocHGlobal(PropertiesSize);
             try
             {
@@ -30,12 +35,10 @@ public static class VulkanDevices
                 for (var i = 0; i < count; i++)
                 {
                     vkGetPhysicalDeviceProperties(devices[i], properties);
-                    if (Marshal.ReadInt32(properties, DeviceTypeOffset) == DeviceTypeDiscrete)
-                    {
-                        return (i, Marshal.PtrToStringAnsi(properties + DeviceNameOffset) ?? "GPU");
-                    }
+                    result.Add((i, Marshal.PtrToStringAnsi(properties + DeviceNameOffset) ?? "GPU",
+                        Marshal.ReadInt32(properties, DeviceTypeOffset) == DeviceTypeDiscrete));
                 }
-                return null;
+                return result;
             }
             finally
             {
@@ -45,7 +48,7 @@ public static class VulkanDevices
         }
         catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException)
         {
-            return null;
+            return result;
         }
     }
 
