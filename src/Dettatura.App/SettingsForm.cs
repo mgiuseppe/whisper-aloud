@@ -166,8 +166,8 @@ internal sealed class SettingsForm : Form
     {
         var editor = new PromptEditor(preset, RemovePromptEditor, RefreshDefaultPrompt);
         _promptEditors.Add(editor);
-        _claudePage!.Controls.Add(editor.Card);
-        _claudePage.Controls.SetChildIndex(editor.Card, _claudePage.Controls.GetChildIndex(_addPrompt));
+        _claudePage!.Items.Add(editor.Card);
+        _claudePage.Items.SetChildIndex(editor.Card, _claudePage.Items.GetChildIndex(_addPrompt));
         RefreshDefaultPrompt();
         if (!focus) return;
         _claudePage.PerformLayout();
@@ -184,7 +184,7 @@ internal sealed class SettingsForm : Form
             return;
         }
         _promptEditors.Remove(editor);
-        _claudePage!.Controls.Remove(editor.Card);
+        _claudePage!.Items.Remove(editor.Card);
         editor.Card.Dispose();
         RefreshDefaultPrompt();
     }
@@ -520,6 +520,9 @@ internal sealed class SettingsForm : Form
     /// <summary>Pagina scorrevole: impila schede e titoletti di sezione a tutta larghezza.</summary>
     private sealed class Page : Panel
     {
+        // Le schede stanno in un unico contenitore alto quanto il contenuto: lo scorrimento lo gestisce
+        // Windows spostando il contenitore, e le posizioni interne non dipendono da quanto si è scorso.
+        private readonly Panel _content = new() { BackColor = Window, Location = Point.Empty };
         private bool _arranging;
 
         public Page(params Control[] items)
@@ -531,35 +534,52 @@ internal sealed class SettingsForm : Form
             HorizontalScroll.Enabled = false;
             HorizontalScroll.Visible = false;
             AutoScroll = true;
-            Controls.AddRange(items);
+            _content.Controls.AddRange(items);
+            _content.ControlAdded += (_, _) => PerformLayout();
+            _content.ControlRemoved += (_, _) => PerformLayout();
+            Controls.Add(_content);
             DarkScrollbars(this);
         }
 
+        /// <summary>Schede e titoletti della pagina, nell'ordine in cui compaiono.</summary>
+        public ControlCollection Items => _content.Controls;
+
         protected override void OnLayout(LayoutEventArgs levent)
         {
-            base.OnLayout(levent);
-            if (_arranging) return;
-            _arranging = true;
-            try
+            if (!_arranging)
             {
-                var x = S(28);
-                // Si lascia sempre il posto della barra verticale: se compare dopo, le schede non sforano a destra.
-                var scrollbar = VerticalScroll.Visible ? 0 : SystemInformation.VerticalScrollBarWidth;
-                var width = ClientSize.Width - 2 * x - scrollbar;
-                var y = 0;
-                foreach (Control item in Controls)
+                _arranging = true;
+                try
                 {
-                    var height = item is SettingsCard card ? card.Arrange(width) : item.Height;
-                    if (item is not SettingsCard and not ModernButton) item.Width = width;
-                    item.Location = new Point(x, y + AutoScrollPosition.Y);
-                    y += height + (item is SettingsCard ? S(18) : S(8));
+                    Arrange();
                 }
-                AutoScrollMinSize = new Size(0, y + S(8));
+                finally
+                {
+                    _arranging = false;
+                }
             }
-            finally
+            base.OnLayout(levent);
+        }
+
+        private void Arrange()
+        {
+            var x = S(28);
+            // Si lascia sempre il posto della barra verticale: se compare dopo, le schede non sforano a destra.
+            var scrollbar = VerticalScroll.Visible ? 0 : SystemInformation.VerticalScrollBarWidth;
+            var width = ClientSize.Width - 2 * x - scrollbar;
+            if (width <= 0) return;
+
+            var y = 0;
+            _content.SuspendLayout();
+            foreach (Control item in _content.Controls)
             {
-                _arranging = false;
+                var height = item is SettingsCard card ? card.Arrange(width) : item.Height;
+                if (item is not SettingsCard and not ModernButton) item.Width = width;
+                item.Location = new Point(x, y);
+                y += height + (item is SettingsCard ? S(18) : S(8));
             }
+            _content.ResumeLayout(false);
+            _content.Size = new Size(ClientSize.Width - scrollbar, y + S(8));
         }
     }
 
