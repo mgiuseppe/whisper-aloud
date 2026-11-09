@@ -1,7 +1,7 @@
 ﻿// Misura la pipeline: trascrizione Whisper dei file audio in samples/ e riscrittura con la CLI claude
 // delle frasi in samples/trascrizioni.txt, confrontando un processo nuovo per ogni chiamata
 // con il processo di riserva già avviato. Stampa anche prima/dopo per controllare la qualità.
-// Uso: dotnet run -c Release --project tools/Dettatura.Bench [-- modello]   (default: sonnet)
+// Uso: dotnet run -c Release --project tools/Dettatura.Bench [-- [modello] [--gpu N] [--solo-whisper]]   (default: sonnet)
 
 using System.Diagnostics;
 using Dettatura.Core;
@@ -17,12 +17,16 @@ var samplesDir = Path.Combine(FindRepoRoot(), "samples");
 var files = Directory.GetFiles(samplesDir, "*.wav");
 var sentences = File.ReadAllLines(Path.Combine(samplesDir, "trascrizioni.txt")).Where(l => l.Length > 0).ToList();
 var settings = new DettaturaSettings();
-var model = args.Length > 0 ? args[0] : settings.Claude.Model;
+var gpuIndex = Array.IndexOf(args, "--gpu");
+var gpu = gpuIndex >= 0 ? int.Parse(args[gpuIndex + 1]) : -1;
+var onlyWhisper = args.Contains("--solo-whisper");
+var model = args.FirstOrDefault(a => !a.StartsWith("--") && !int.TryParse(a, out _)) ?? settings.Claude.Model;
 
 Console.WriteLine($"Modello: {settings.WhisperModel}");
 var load = Stopwatch.StartNew();
 await using var transcriber = await WhisperTranscriber.CreateAsync(
-    settings.ResolveModelPath(), settings.Language, settings.WhisperPrompt, new Progress<string>(Console.WriteLine));
+    settings.ResolveModelPath(), settings.Language, settings.WhisperPrompt, new Progress<string>(Console.WriteLine),
+    gpu, message => Console.WriteLine($"  whisper: {message}"));
 Console.WriteLine($"Whisper pronto in {load.ElapsedMilliseconds} ms (runtime: {WhisperTranscriber.LoadedRuntime})\n");
 
 Console.WriteLine("| File | Audio | Trascrizione (mediana) |");
@@ -41,6 +45,8 @@ foreach (var file in files)
     Console.WriteLine($"Whisper: {text}");
     Console.WriteLine($"| {Path.GetFileName(file)} | {samples.Length / (double)WhisperTranscriber.SampleRate:0.0} s | {Median(times)} ms |");
 }
+
+if (onlyWhisper) return;
 
 var cold = await MeasureCleanupAsync(new ClaudeOptions { Model = model, UseWarmProcess = false }, ColdRuns, TimeSpan.Zero);
 var warm = await MeasureCleanupAsync(new ClaudeOptions { Model = model, UseWarmProcess = true }, sentences.Count, pauseBetweenDictations);

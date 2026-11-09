@@ -2,6 +2,7 @@ using System.Text;
 using Whisper.net;
 using Whisper.net.Ggml;
 using Whisper.net.LibraryLoader;
+using Whisper.net.Logger;
 
 namespace Dettatura.Core.Transcription;
 
@@ -11,7 +12,7 @@ public sealed class WhisperTranscriber : IAsyncDisposable
     public const int SampleRate = 16000;
 
     /// <summary>Sotto questa energia media l'audio è considerato silenzio: Whisper sul silenzio inventa frasi.</summary>
-    private const float SilenceRms = 0.003f;
+    public const float SilenceRms = 0.003f;
 
     private readonly WhisperFactory _factory;
     private readonly WhisperProcessor _processor;
@@ -27,7 +28,8 @@ public sealed class WhisperTranscriber : IAsyncDisposable
     public static string? LoadedRuntime => RuntimeOptions.LoadedLibrary?.ToString();
 
     public static async Task<WhisperTranscriber> CreateAsync(
-        string modelPath, string language, string? prompt, IProgress<string>? progress = null, CancellationToken cancellationToken = default)
+        string modelPath, string language, string? prompt, IProgress<string>? progress = null,
+        int gpuDevice = -1, Action<string>? log = null, CancellationToken cancellationToken = default)
     {
         if (!File.Exists(modelPath))
         {
@@ -36,9 +38,20 @@ public sealed class WhisperTranscriber : IAsyncDisposable
         }
 
         RuntimeOptions.RuntimeLibraryOrder = [RuntimeLibrary.Vulkan, RuntimeLibrary.Cpu];
+        // Le righe sui dispositivi servono solo al caricamento: whisper.cpp le ripete a ogni trascrizione.
+        var loading = true;
+        if (log is not null) LogProvider.AddLogger((_, message) => { if (loading && message is not null && IsDeviceLine(message)) log(message.Trim()); });
 
         progress?.Report("Caricamento del modello Whisper...");
-        var factory = WhisperFactory.FromPath(modelPath);
+        // Con -1 si sceglie la prima GPU dedicata: whisper.cpp userebbe la GPU 0, sui portatili spesso l'integrata.
+        if (gpuDevice < 0 && VulkanDevices.FindDiscreteGpu() is { } discrete)
+        {
+            gpuDevice = discrete.Index;
+            log?.Invoke($"GPU dedicata scelta: {discrete.Index} = {discrete.Name}");
+        }
+        var options = new WhisperFactoryOptions();
+        if (gpuDevice >= 0) options.GpuDevice = gpuDevice;
+        var factory = WhisperFactory.FromPath(modelPath, options);
         var builder = factory.CreateBuilder()
             .WithLanguage(language)
             .WithNoContext()
@@ -49,6 +62,7 @@ public sealed class WhisperTranscriber : IAsyncDisposable
 
         // La prima inferenza sulla GPU prepara le pipeline Vulkan: meglio farla ora che alla prima dettatura.
         await transcriber.TranscribeAsync(new float[SampleRate], cancellationToken, skipSilenceCheck: true).ConfigureAwait(false);
+        loading = false;
         return transcriber;
     }
 
@@ -76,7 +90,13 @@ public sealed class WhisperTranscriber : IAsyncDisposable
         }
     }
 
-    private static float Rms(float[] samples)
+    private static bool IsDeviceLine(string message) =>
+        message.Contains("vulkan", StringComparison.OrdinalIgnoreCase) ||
+        message.Contains("device", StringComparison.OrdinalIgnoreCase) ||
+        message.Contains("gpu", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Energia media dell'audio: sotto <see cref="SilenceRms"/> non si trascrive.</summary>
+    public static float Rms(float[] samples)
     {
         if (samples.Length == 0) return 0;
         double sum = 0;

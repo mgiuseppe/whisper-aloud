@@ -14,12 +14,15 @@ internal sealed class TrayApp : ApplicationContext
     private readonly NotifyIcon _tray;
     private readonly ToolStripMenuItem _statusItem;
     private readonly HotkeyWindow _hotkeys = new();
-    private readonly MicRecorder _mic;
+    private MicRecorder _mic;
     private readonly System.Windows.Forms.Timer _releaseTimer = new() { Interval = 15 };
     private readonly Icon _idleIcon = TrayIcons.Circle(Color.FromArgb(120, 120, 120));
     private readonly Icon _recordingIcon = TrayIcons.Circle(Color.FromArgb(220, 40, 40));
     private readonly Icon _workingIcon = TrayIcons.Circle(Color.FromArgb(235, 160, 20));
 
+    private readonly OverlayForm? _overlay;
+    private readonly ToolStripMenuItem _copyLastItem;
+    private string? _lastText;
     private ClaudeCleaner? _cleaner;
     private WhisperTranscriber? _transcriber;
     private Hotkey? _heldHotkey;
@@ -31,11 +34,15 @@ internal sealed class TrayApp : ApplicationContext
     {
         _settings = settings;
         _mic = new MicRecorder(settings.MicrophoneDevice);
+        _overlay = settings.ShowOverlay ? new OverlayForm() : null;
+        _copyLastItem = new ToolStripMenuItem("Copia ultima dettatura", null, (_, _) => CopyLast()) { Enabled = false };
 
         _statusItem = new ToolStripMenuItem("Avvio...") { Enabled = false };
         var menu = new ContextMenuStrip();
         menu.Items.Add(_statusItem);
         menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(_copyLastItem);
+        menu.Items.Add(BuildMicrophoneMenu());
         menu.Items.Add("Impostazioni", null, (_, _) => OpenFile(AppPaths.SettingsFile));
         menu.Items.Add("Registro latenze", null, (_, _) => OpenFile(AppPaths.LatencyLog));
         menu.Items.Add("Log errori", null, (_, _) => OpenFile(AppPaths.AppLog));
@@ -45,9 +52,40 @@ internal sealed class TrayApp : ApplicationContext
         _tray = new NotifyIcon { Icon = _workingIcon, Text = Title, ContextMenuStrip = menu, Visible = true };
         _releaseTimer.Tick += OnReleaseTick;
 
+        AppLog.Info($"avvio, microfono: {MicRecorder.DeviceName(settings.MicrophoneDevice)}");
         RegisterHotkeys();
         StartCleaner();
         _ = LoadTranscriberAsync();
+    }
+
+    /// <summary>Sottomenu per scegliere il microfono; la scelta viene salvata nelle impostazioni.</summary>
+    private ToolStripMenuItem BuildMicrophoneMenu()
+    {
+        var root = new ToolStripMenuItem("Microfono");
+        root.DropDownOpening += (_, _) =>
+        {
+            root.DropDownItems.Clear();
+            var devices = new List<(int Index, string Name)> { (-1, "Predefinito di Windows") };
+            devices.AddRange(MicRecorder.ListDevices());
+            foreach (var (index, name) in devices)
+            {
+                var item = new ToolStripMenuItem(name) { Checked = index == _settings.MicrophoneDevice };
+                item.Click += (_, _) => SelectMicrophone(index);
+                root.DropDownItems.Add(item);
+            }
+        };
+        root.DropDownItems.Add("..."); // segnaposto: senza voci il sottomenu non si apre
+        return root;
+    }
+
+    private void SelectMicrophone(int index)
+    {
+        if (_mic.IsRecording) return;
+        _mic.Dispose();
+        _mic = new MicRecorder(index);
+        _settings.MicrophoneDevice = index;
+        _settings.Save();
+        AppLog.Info($"microfono scelto: {MicRecorder.DeviceName(index)}");
     }
 
     private void RegisterHotkeys()
@@ -91,7 +129,8 @@ internal sealed class TrayApp : ApplicationContext
         try
         {
             _transcriber = await Task.Run(() => WhisperTranscriber.CreateAsync(
-                _settings.ResolveModelPath(), _settings.Language, _settings.WhisperPrompt, progress));
+                _settings.ResolveModelPath(), _settings.Language, _settings.WhisperPrompt, progress,
+                _settings.GpuDevice, message => AppLog.Info($"whisper: {message}")));
             SetIdle();
             _tray.ShowBalloonTip(3000, Title,
                 $"Pronta ({WhisperTranscriber.LoadedRuntime}). Tieni premuto {_settings.HotkeyDictate} per dettare.",
@@ -113,10 +152,11 @@ internal sealed class TrayApp : ApplicationContext
 
     private void StartDictation(Hotkey hotkey, bool cleanup)
     {
+        AppLog.Info($"{hotkey.Text} premuta (occupata: {_busy}, in registrazione: {_mic.IsRecording}, whisper pronto: {_transcriber is not null})");
         if (_busy || _mic.IsRecording) return;
         if (_transcriber is null)
         {
-            _tray.ShowBalloonTip(2000, Title, "Il modello Whisper si sta ancora caricando.", ToolTipIcon.Warning);
+            Notify("Non ancora pronta", "Il modello Whisper si sta ancora caricando: riprova tra qualche secondo.");
             return;
         }
 
@@ -135,6 +175,8 @@ internal sealed class TrayApp : ApplicationContext
         _recording.Restart();
         _tray.Icon = _recordingIcon;
         SetStatus(cleanup ? "In ascolto (con riscrittura Claude)" : "In ascolto");
+        _overlay?.ShowRecording(cleanup ? "In ascolto · poi riscrive Claude" : "In ascolto",
+            $"rilascia {hotkey.Text}", () => _mic.Level);
         _releaseTimer.Start();
     }
 
@@ -143,16 +185,28 @@ internal sealed class TrayApp : ApplicationContext
     {
         if (_heldHotkey is null || Native.IsKeyDown((int)_heldHotkey.Key)) return;
         _releaseTimer.Stop();
+        var hotkey = _heldHotkey.Text;
         _heldHotkey = null;
-        _ = FinishDictationAsync(_heldClean);
+        _ = FinishDictationAsync(_heldClean, hotkey);
     }
 
-    private async Task FinishDictationAsync(bool cleanup)
+    private async Task FinishDictationAsync(bool cleanup, string hotkey)
     {
         var samples = _mic.Stop();
         _recording.Stop();
+        var rms = WhisperTranscriber.Rms(samples);
+        AppLog.Info($"rilasciata dopo {_recording.ElapsedMilliseconds} ms, {samples.Length} campioni, livello {rms:0.0000}");
         if (_recording.ElapsedMilliseconds < _settings.MinRecordingMs || _transcriber is null)
         {
+            Notify("Pressione troppo breve", $"Tieni premuto {hotkey} mentre parli e rilascia quando hai finito.");
+            SetIdle();
+            return;
+        }
+        if (rms < WhisperTranscriber.SilenceRms)
+        {
+            Notify("Nessun suono dal microfono",
+                $"Il microfono \"{MicRecorder.DeviceName(_settings.MicrophoneDevice)}\" non manda audio. " +
+                "Scegline un altro dal menu Microfono dell'icona nel tray.");
             SetIdle();
             return;
         }
@@ -164,14 +218,21 @@ internal sealed class TrayApp : ApplicationContext
         try
         {
             SetStatus("Trascrizione...");
+            _overlay?.ShowWorking("Trascrizione…");
             var step = Stopwatch.StartNew();
             var text = await Task.Run(() => _transcriber.TranscribeAsync(samples));
             transcribeMs = step.ElapsedMilliseconds;
-            if (string.IsNullOrWhiteSpace(text)) return;
+            AppLog.Info($"trascrizione in {transcribeMs} ms: {text.Length} caratteri");
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                Notify("Nessun testo riconosciuto", "Whisper non ha riconosciuto parole: riprova parlando più vicino al microfono.");
+                return;
+            }
 
             if (cleanup && _cleaner is not null)
             {
                 SetStatus("Pulizia con Claude...");
+                _overlay?.ShowWorking("Riscrittura con Claude…");
                 step.Restart();
                 try
                 {
@@ -187,6 +248,8 @@ internal sealed class TrayApp : ApplicationContext
             step.Restart();
             await TextInjector.PasteAsync(_settings.AppendSpace ? text + " " : text, _settings.RestoreClipboard);
             pasteMs = step.ElapsedMilliseconds;
+            Remember(text);
+            _overlay?.ShowResult("Incollato", $"{total.Elapsed.TotalSeconds:0.0} s", text);
 
             LatencyLog.Append(new LatencySample(DateTimeOffset.Now, cleanup ? "clean" : "raw",
                 samples.Length / (double)WhisperTranscriber.SampleRate, transcribeMs, cleanMs, pasteMs,
@@ -215,17 +278,20 @@ internal sealed class TrayApp : ApplicationContext
             var selection = await TextInjector.CopySelectionAsync();
             if (string.IsNullOrWhiteSpace(selection))
             {
-                _tray.ShowBalloonTip(2000, Title, "Nessun testo selezionato.", ToolTipIcon.Info);
+                Notify("Nessun testo selezionato", "Seleziona il testo da sistemare e poi premi la scorciatoia.");
                 return;
             }
 
             SetStatus("Pulizia della selezione...");
+            _overlay?.ShowWorking("Riscrittura della selezione…");
             var step = Stopwatch.StartNew();
             var cleaned = await _cleaner.CleanAsync(selection);
             var cleanMs = step.ElapsedMilliseconds;
 
             step.Restart();
             await TextInjector.PasteAsync(cleaned, _settings.RestoreClipboard);
+            Remember(cleaned);
+            _overlay?.ShowResult("Selezione riscritta", $"{total.Elapsed.TotalSeconds:0.0} s", cleaned);
             LatencyLog.Append(new LatencySample(DateTimeOffset.Now, "selection", 0, 0, cleanMs,
                 step.ElapsedMilliseconds, total.ElapsedMilliseconds, cleaned.Length));
         }
@@ -238,6 +304,26 @@ internal sealed class TrayApp : ApplicationContext
             _busy = false;
             SetIdle();
         }
+    }
+
+    private void Remember(string text)
+    {
+        _lastText = text;
+        _copyLastItem.Enabled = true;
+    }
+
+    private void CopyLast()
+    {
+        if (_lastText is null) return;
+        Clipboard.SetText(_lastText);
+        _overlay?.ShowResult("Ultima dettatura copiata", string.Empty, _lastText);
+    }
+
+    /// <summary>Avviso all'utente: nella finestrella se è attiva, altrimenti nel fumetto del tray.</summary>
+    private void Notify(string title, string message)
+    {
+        if (_overlay is not null) _overlay.ShowMessage(title, message);
+        else _tray.ShowBalloonTip(4000, Title, $"{title}. {message}", ToolTipIcon.Warning);
     }
 
     private void SetIdle()
@@ -256,7 +342,8 @@ internal sealed class TrayApp : ApplicationContext
     private void Report(Exception e)
     {
         AppLog.Write(e);
-        _tray.ShowBalloonTip(5000, Title, e.Message, ToolTipIcon.Error);
+        if (_overlay is not null) _overlay.ShowMessage("Errore", e.Message);
+        else _tray.ShowBalloonTip(5000, Title, e.Message, ToolTipIcon.Error);
     }
 
     private static void OpenFile(string path)
@@ -270,6 +357,7 @@ internal sealed class TrayApp : ApplicationContext
         _releaseTimer.Dispose();
         _hotkeys.Dispose();
         _mic.Dispose();
+        _overlay?.Dispose();
         _tray.Visible = false;
         _tray.Dispose();
         _cleaner?.DisposeAsync().AsTask().GetAwaiter().GetResult();

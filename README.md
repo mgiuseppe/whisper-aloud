@@ -22,6 +22,17 @@ scorciatoia premuta ──► microfono (NAudio, 16 kHz mono)
 
 Le scorciatoie con `Spazio` sono spesso già prese (Superwhisper, PowerToys): se una scorciatoia è occupata l'app lo segnala e registra comunque le altre.
 
+### La finestrella di stato
+
+In basso al centro dello schermo compare una finestrella sempre in primo piano che non ruba il focus (l'incolla finisce comunque nella finestra in cui stavi scrivendo):
+
+- **In ascolto**: pallino rosso, barra del livello del microfono; se dopo 1,5 s non arriva suono lo dice subito.
+- **Trascrizione… / Riscrittura con Claude…**: pallino arancione con i secondi che scorrono, così si vede che sta lavorando.
+- **Incollato**: il testo, il tempo totale e il pulsante **Copia**; si chiude da sola dopo 10 s (resta aperta finché il mouse è sopra).
+- **Avvisi**: pressione troppo breve, microfono muto, nessuna parola riconosciuta, errori.
+
+L'ultima dettatura si ricopia anche dal menu del tray (**Copia ultima dettatura**). Con `ShowOverlay: false` la finestrella sparisce e gli avvisi tornano nei fumetti del tray.
+
 L'icona nel tray è grigia a riposo, rossa mentre ascolta, arancione mentre lavora.
 
 ### La riscrittura
@@ -41,6 +52,8 @@ Misure su MSI Raider GE76 (RTX 3080 Laptop, 8 GB), 29 ottobre 2026, con `tools/D
 | 6 s | ~0,41–0,46 s |
 | 12 s | ~0,48–0,50 s |
 | 24 s | ~0,59–0,60 s |
+
+**Attenzione ai portatili con due GPU.** Vulkan elenca per prima la Intel Iris Xe integrata e whisper.cpp, senza indicazioni, usa la GPU 0: sugli stessi file la trascrizione passava da ~0,4 s a **~11–13 s**. L'app sceglie quindi da sola la prima GPU dedicata (`GpuDevice: -1`) e scrive nel log errori quale usa (`using Vulkan1 backend`).
 
 **Riscrittura con la CLI `claude`**: il costo vero è l'avvio della CLI, non il modello (la chiamata API dura circa 1 s). Una `claude -p` lanciata da shell per ogni testo impiegava 6–8 s; con il processo di riserva già avviato si paga solo la risposta.
 
@@ -63,7 +76,7 @@ Un processo persistente con `--input-format stream-json` risponde in 1,5–2 s, 
 
 - Windows 10/11 x64, [.NET 10 SDK](https://dotnet.microsoft.com/download)
 - [Claude Code](https://docs.claude.com/en/docs/claude-code) installato e autenticato (`claude` nel PATH o in `%USERPROFILE%\.local\bin`). L'app non gestisce login né credenziali: si appoggia alla CLI già autenticata.
-- GPU con driver Vulkan per la trascrizione veloce (senza GPU funziona su CPU, più lentamente).
+- GPU con driver Vulkan per la trascrizione veloce (senza GPU funziona su CPU, più lentamente). Sui portatili con grafica ibrida serve la GPU dedicata: vedi la nota nella sezione Latenza.
 
 ## Uso
 
@@ -81,7 +94,9 @@ Al primo avvio l'app scarica il modello Whisper (~550 MB) in `%LOCALAPPDATA%\Det
 | `Language` | `it` | lingua di Whisper |
 | `WhisperModel` | `ggml-large-v3-turbo-q5_0.bin` | nome in `models` o percorso assoluto |
 | `WhisperPrompt` | frase in italiano | contesto per Whisper: utile per nomi e termini ricorrenti |
-| `MicrophoneDevice` | `-1` | `-1` = microfono predefinito di Windows |
+| `MicrophoneDevice` | `-1` | `-1` = microfono predefinito di Windows; si sceglie anche dal menu **Microfono** del tray |
+| `GpuDevice` | `-1` | GPU Vulkan per Whisper; `-1` = prima GPU dedicata, altrimenti l'indice come lo elenca Vulkan |
+| `ShowOverlay` | `true` | finestrella di stato in primo piano |
 | `Claude.Model` | `sonnet` | `haiku` è più veloce ma a volte riformula |
 | `Claude.UseWarmProcess` | `true` | tiene un processo `claude` pronto per la dettatura successiva |
 | `Claude.SystemPrompt` | vuoto | sostituisce il prompt di riscrittura |
@@ -94,7 +109,7 @@ Le modifiche valgono al riavvio dell'app.
 | Progetto | Contenuto |
 |---|---|
 | `src/Dettatura.Core` | trascrizione (`WhisperTranscriber`), riscrittura (`ClaudeCleaner`, protocollo stream-json), impostazioni, registro latenze |
-| `src/Dettatura.App` | app WinForms nel tray: `RegisterHotKey`, registrazione NAudio, incolla con `SendInput` |
+| `src/Dettatura.App` | app WinForms nel tray: `RegisterHotKey`, registrazione NAudio, finestrella di stato, incolla con `SendInput` |
 | `tools/Dettatura.Bench` | benchmark della pipeline su file audio |
 | `tests/Dettatura.Core.Tests` | test xUnit di protocollo, prompt e argomenti della CLI |
 | `samples` | tre frasi sintetizzate con la voce Elsa di Windows (per i tempi di Whisper) e `trascrizioni.txt` (per qualità e tempi della riscrittura) |
@@ -102,6 +117,7 @@ Le modifiche valgono al riavvio dell'app.
 ```bash
 dotnet test
 dotnet run -c Release --project tools/Dettatura.Bench
+dotnet run -c Release --project tools/Dettatura.Bench -- --solo-whisper --gpu 1
 ```
 
 ## Limiti noti

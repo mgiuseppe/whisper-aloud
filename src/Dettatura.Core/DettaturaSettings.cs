@@ -24,6 +24,12 @@ public sealed class DettaturaSettings
     /// <summary>Contesto per Whisper: aiuta punteggiatura e parole ricorrenti (nomi, termini tecnici).</summary>
     public string WhisperPrompt { get; set; } = "Trascrizione di un messaggio dettato in italiano, con punteggiatura.";
 
+    /// <summary>GPU Vulkan per Whisper (indice come lo elenca Vulkan); -1 sceglie da sola la prima GPU dedicata.</summary>
+    public int GpuDevice { get; set; } = -1;
+
+    /// <summary>Mostra in primo piano la finestrella di stato (registrazione, trascrizione, testo incollato).</summary>
+    public bool ShowOverlay { get; set; } = true;
+
     /// <summary>Indice del microfono per WaveIn; -1 è il dispositivo predefinito di Windows.</summary>
     public int MicrophoneDevice { get; set; } = -1;
 
@@ -42,12 +48,15 @@ public sealed class DettaturaSettings
     {
         WriteIndented = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.Never,
-        // Il file si modifica a mano: "Ctrl+Alt+D" resta leggibile invece di diventare "Ctrl+Alt+D".
+        // Il file si modifica a mano: il "+" delle scorciatoie resta leggibile invece di diventare una sequenza \u.
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
     public string ResolveModelPath() =>
         Path.IsPathRooted(WhisperModel) ? WhisperModel : Path.Combine(AppPaths.ModelsDir, WhisperModel);
+
+    public void Save(string? path = null) =>
+        File.WriteAllText(path ?? AppPaths.SettingsFile, JsonSerializer.Serialize(this, JsonOptions));
 
     /// <summary>Legge le impostazioni; al primo avvio scrive il file con i valori di default.</summary>
     public static DettaturaSettings LoadOrCreate(string? path = null)
@@ -60,7 +69,7 @@ public sealed class DettaturaSettings
         }
 
         var settings = new DettaturaSettings();
-        File.WriteAllText(path, JsonSerializer.Serialize(settings, JsonOptions));
+        settings.Save(path);
         return settings;
     }
 }
