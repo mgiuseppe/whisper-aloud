@@ -34,9 +34,16 @@ internal sealed class SettingsForm : Form
     private readonly CheckBox _restoreClipboard = Check("Ripristina gli appunti com'erano prima dell'incolla");
     private readonly CheckBox _showOverlay = Check("Mostra la finestrella di stato in primo piano");
 
-    public SettingsForm(DettaturaSettings current)
+    /// <param name="suspendHotkeys">Libera le scorciatoie mentre se ne scrive una nuova in un campo.</param>
+    /// <param name="resumeHotkeys">Le riattiva quando il campo perde il focus.</param>
+    public SettingsForm(DettaturaSettings current, Action suspendHotkeys, Action resumeHotkeys)
     {
         _settings = current.Clone();
+        foreach (var box in new[] { _hotkeyDictate, _hotkeyClaude, _hotkeySelection })
+        {
+            box.Enter += (_, _) => suspendHotkeys();
+            box.Leave += (_, _) => resumeHotkeys();
+        }
 
         Text = "Dettatura · Impostazioni";
         AutoScaleMode = AutoScaleMode.Dpi;
@@ -76,6 +83,7 @@ internal sealed class SettingsForm : Form
         Full(grid, _pushToTalk);
         Full(grid, _toggle);
         Section(grid, "Scorciatoie (clicca nel campo e premi la combinazione)");
+        Full(grid, Note("Mentre il cursore è in uno di questi campi le scorciatoie sono sospese; altrove funzionano anche a finestra aperta."));
         Row(grid, "Detta e incolla", _hotkeyDictate);
         Row(grid, "Detta, riscrivi con Claude", _hotkeyClaude);
         Row(grid, "Riscrivi la selezione", _hotkeySelection);
@@ -307,6 +315,9 @@ internal sealed class SettingsForm : Form
         grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         return grid.RowCount++;
     }
+
+    private static Label Note(string text) =>
+        new() { Text = text, AutoSize = true, ForeColor = SystemColors.GrayText, MaximumSize = new Size(620, 0) };
 
     private static RadioButton Radio(string text) => new() { Text = text, AutoSize = true };
 

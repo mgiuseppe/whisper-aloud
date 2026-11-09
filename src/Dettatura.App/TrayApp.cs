@@ -93,12 +93,15 @@ internal sealed class TrayApp : ApplicationContext
 
     private void RegisterHotkeys()
     {
+        _hotkeys.UnregisterAll();
         // Ogni scorciatoia si registra per conto suo: se una è già occupata, le altre funzionano lo stesso.
         var errors = new List<string>();
         Register(_settings.HotkeyDictate, hotkey => () => StartDictation(hotkey, cleanup: false));
         Register(_settings.HotkeyDictateWithClaude, hotkey => () => StartDictation(hotkey, cleanup: true));
         Register(_settings.HotkeyCleanSelection, ignored => () => _ = CleanSelectionAsync());
         if (errors.Count > 0) Report(new InvalidOperationException(string.Join(Environment.NewLine, errors)));
+        AppLog.Info($"scorciatoie attive: {_settings.HotkeyDictate}, {_settings.HotkeyDictateWithClaude}, " +
+                    $"{_settings.HotkeyCleanSelection}{(errors.Count > 0 ? $" (errori: {errors.Count})" : string.Empty)}");
 
         void Register(string text, Func<Hotkey, Action> handler)
         {
@@ -164,7 +167,7 @@ internal sealed class TrayApp : ApplicationContext
             _ = FinishDictationAsync(_heldClean, held);
             return;
         }
-        if (_busy || _mic.IsRecording || _settingsForm is not null) return;
+        if (_busy || _mic.IsRecording) return;
         if (_transcriber is null)
         {
             Notify("Non ancora pronta", "Il modello Whisper si sta ancora caricando: riprova tra qualche secondo.");
@@ -285,16 +288,24 @@ internal sealed class TrayApp : ApplicationContext
 
     private async Task CleanSelectionAsync()
     {
-        if (_busy || _mic.IsRecording || _cleaner is null) return;
+        AppLog.Info($"{_settings.HotkeyCleanSelection} premuta (occupata: {_busy}, claude pronto: {_cleaner is not null})");
+        if (_busy || _mic.IsRecording) return;
+        if (_cleaner is null)
+        {
+            Notify("Claude non disponibile", "La CLI claude non è stata trovata: controlla l'eseguibile nelle impostazioni.");
+            return;
+        }
 
         _busy = true;
         _tray.Icon = _workingIcon;
         var total = Stopwatch.StartNew();
         try
         {
-            var selection = await TextInjector.CopySelectionAsync();
+            var (selection, original) = await TextInjector.CopySelectionAsync();
+            AppLog.Info($"selezione copiata: {selection?.Length ?? 0} caratteri");
             if (string.IsNullOrWhiteSpace(selection))
             {
+                TextInjector.Restore(original);
                 Notify("Nessun testo selezionato", "Seleziona il testo da sistemare e poi premi la scorciatoia.");
                 return;
             }
@@ -306,7 +317,8 @@ internal sealed class TrayApp : ApplicationContext
             var cleanMs = step.ElapsedMilliseconds;
 
             step.Restart();
-            await TextInjector.PasteAsync(cleaned, _settings.RestoreClipboard);
+            AppLog.Info($"selezione riscritta in {cleanMs} ms: {cleaned.Length} caratteri");
+            await TextInjector.PasteAsync(cleaned, _settings.RestoreClipboard, original);
             Remember(cleaned);
             _overlay?.ShowResult("Selezione riscritta", $"{total.Elapsed.TotalSeconds:0.0} s", cleaned);
             LatencyLog.Append(new LatencySample(DateTimeOffset.Now, "selection", 0, 0, cleanMs,
@@ -336,13 +348,11 @@ internal sealed class TrayApp : ApplicationContext
             return;
         }
 
-        // Scorciatoie libere mentre la finestra è aperta: così si possono premere nei campi per sceglierne di nuove.
-        _hotkeys.UnregisterAll();
         try
         {
-            using (_settingsForm = new SettingsForm(_settings))
+            using (_settingsForm = new SettingsForm(_settings, _hotkeys.UnregisterAll, RegisterHotkeys))
             {
-                if (_settingsForm.ShowDialog() == DialogResult.OK && _settingsForm.Result is { } updated) ApplySettings(updated);
+                if (_settingsForm.ShowDialog() == DialogResult.OK && _settingsForm.Result is { } updated) _ = ApplySettingsAsync(updated);
             }
         }
         finally
@@ -353,8 +363,10 @@ internal sealed class TrayApp : ApplicationContext
     }
 
     /// <summary>Applica le impostazioni salvate senza riavvio: ricarica solo i componenti toccati.</summary>
-    private void ApplySettings(DettaturaSettings updated)
+    private async Task ApplySettingsAsync(DettaturaSettings updated)
     {
+        // Con la finestra aperta si può dettare: si applica a dettatura finita, per non cambiare microfono o modello a metà.
+        while (_busy || _mic.IsRecording) await Task.Delay(200);
         var old = _settings;
         _settings = updated;
         try

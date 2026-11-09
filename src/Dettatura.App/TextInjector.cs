@@ -10,10 +10,11 @@ internal static class TextInjector
 {
     private static readonly TimeSpan ModifierWait = TimeSpan.FromSeconds(3);
 
-    public static async Task PasteAsync(string text, bool restoreClipboard)
+    /// <param name="original">Appunti da ripristinare se già salvati prima (riscrittura della selezione).</param>
+    public static async Task PasteAsync(string text, bool restoreClipboard, DataObject? original = null)
     {
         await WaitForModifiersReleasedAsync();
-        var backup = restoreClipboard ? SnapshotClipboard() : null;
+        var backup = restoreClipboard ? original ?? SnapshotClipboard() : null;
 
         SetClipboardText(text);
         Native.SendCtrlChord(Keys.V);
@@ -26,19 +27,28 @@ internal static class TextInjector
         }
     }
 
-    /// <summary>Copia la selezione corrente; restituisce null se non c'è testo selezionato.</summary>
-    public static async Task<string?> CopySelectionAsync()
+    /// <summary>
+    /// Copia la selezione corrente (testo null se non c'è nulla di selezionato) e restituisce anche
+    /// gli appunti di prima, che Ctrl+C sovrascrive, per poterli ripristinare.
+    /// </summary>
+    public static async Task<(string? Text, DataObject? Original)> CopySelectionAsync()
     {
         await WaitForModifiersReleasedAsync();
+        var original = SnapshotClipboard();
         RetryClipboard(Clipboard.Clear);
         Native.SendCtrlChord(Keys.C);
 
         for (var i = 0; i < 20; i++)
         {
             await Task.Delay(25);
-            if (Clipboard.ContainsText()) return Clipboard.GetText();
+            if (Clipboard.ContainsText()) return (Clipboard.GetText(), original);
         }
-        return null;
+        return (null, original);
+    }
+
+    public static void Restore(DataObject? original)
+    {
+        if (original is not null) RetryClipboard(() => Clipboard.SetDataObject(original, copy: true));
     }
 
     /// <summary>
