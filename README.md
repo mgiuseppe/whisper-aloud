@@ -4,7 +4,6 @@ Voice dictation for Windows in the style of Wispr Flow: hold a shortcut, speak, 
 
 - **Local transcription** with [Whisper.net](https://github.com/sandrohanea/whisper.net) (whisper.cpp) and the quantized `large-v3-turbo` model, on the GPU through Vulkan: about half a second for a typical sentence.
 - **Optional rewriting with Claude** through the [Claude Code](https://code.claude.com/docs/en/overview) CLI in headless mode, using the Claude subscription already signed in on the machine, with no pay-per-use API key. Pick a prompt: light proofreading, meeting minutes, translation, or your own.
-- **Status window** that shows what the app is doing, lets you switch prompt while you speak and keeps the result one click away.
 
 ![The status window while recording](docs/images/overlay-recording.png)
 
@@ -34,32 +33,7 @@ The app lives in the system tray. On first start it downloads the Whisper model 
 
 Instead of holding the shortcut you can switch to **start/stop** mode: press once to start recording and again to stop, handy for long dictations. Shortcuts can be changed in the settings; if one is already taken by another app, Whisper Aloud says so and still registers the others.
 
-### Status window
-
-A small always-on-top window at the bottom of the screen follows each dictation without stealing focus, so the text still lands where you were typing:
-
-- **Listening**: a waveform follows your voice, with a warning if the microphone sends no sound.
-- **Working**: transcription and rewriting show a running timer.
-- **Done**: the text, the total time and a **Copy** button.
-
-![Result pasted into the active window](docs/images/overlay-result.png)
-
-Drag it wherever you like: the position is remembered, and a double click brings it back to the bottom centre. The last dictation can also be copied again from the tray menu.
-
-### Prompts
-
-While recording, the selector under the waveform picks the Claude prompt for that dictation, or **Solo trascrizione** (transcription only), even if you started with `Ctrl+Alt+D`. Four prompts are included:
-
-| Prompt | What it does | Pastes the result |
-|---|---|---|
-| Correzione | light proofreading: punctuation, hesitations, self-corrections; never changes the meaning | yes |
-| Minuta | meeting minutes: short summary, topics, calls to action | no, it stays in the status window to copy |
-| Traduzione in inglese | translates the dictation into English | yes |
-| Pirata ubriaco | rewrites it the way a drunk pirate would say it | yes |
-
-![Minutes shown in the status window](docs/images/overlay-minute.png)
-
-You can edit them, add your own and choose the default in the settings; the default can also be changed from the tray menu.
+While you dictate, a small status window shows what the app is doing and lets you pick a Claude prompt for that dictation. Prompts for proofreading, meeting minutes and translation are included, and you can edit them or add your own: see [prompts](docs/settings.md#prompts).
 
 ## Settings
 

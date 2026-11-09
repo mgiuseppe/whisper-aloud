@@ -65,6 +65,8 @@ Included prompts:
 | Traduzione in inglese | translate the dictation into English | yes |
 | Pirata ubriaco | rewrite it the way a drunk pirate would say it | yes |
 
+![Minutes shown in the status window](images/overlay-minute.png)
+
 Claude may answer in Markdown: the status window shows headings, **bold** and bullet lists formatted, while **Copia** (Copy) and pasting use the original Markdown.
 
 The default prompt is chosen here or in the tray menu. While recording, the selector in the status window picks a different prompt, or **Solo trascrizione** (transcription only), for that dictation alone; the next one goes back to the default.
@@ -77,7 +79,16 @@ The default prompt is chosen here or in the tray menu. While recording, the sele
 - **Ripristina gli appunti** (restore the clipboard): puts the previous clipboard contents back after pasting.
 - **Finestrella di stato** (status window): shows the always-on-top window while listening, working and pasting. When off, warnings appear as tray notifications.
 
-The status window can be dragged by its background, title or waveform; the position is saved, and a double click brings it back to the bottom centre of the screen.
+The status window follows each dictation without stealing focus, so the text still lands where you were typing:
+
+- **Listening**: a waveform follows your voice, with a warning if the microphone sends no sound, and the prompt selector.
+- **Working**: transcription and rewriting show a running timer.
+- **Done**: the text, the total time and a **Copia** (Copy) button. It closes after 10 seconds, or stays open while the mouse is over it; results that are not pasted stay until you close them.
+- **Warnings**: press too short, silent microphone, no words recognised, errors.
+
+![Result pasted into the active window](images/overlay-result.png)
+
+Drag it by its background, title or waveform: the position is saved, and a double click brings it back to the bottom centre of the screen.
 
 ## Tray menu
 
