@@ -181,6 +181,11 @@ internal sealed partial class OverlayForm : Form
         _title.Text = title;
         _title.ForeColor = Fore;
         _detail.Text = detail;
+        // Il dettaglio a destra prende lo spazio che gli serve ("rilascia Ctrl+Alt+Shift+D" è lungo), il titolo il resto.
+        var detailWidth = Math.Max(TextRenderer.MeasureText(detail, _detail.Font).Width,
+            TextRenderer.MeasureText("00,0 s", _detail.Font).Width) + S(4);
+        _detail.SetBounds(Width - S(18) - detailWidth, S(14), detailWidth, S(22));
+        _title.Width = Math.Max(S(120), _detail.Left - S(8) - _title.Left);
         _wave.Visible = mode == Mode.Recording;
         // Visible si legge falso finché la finestrella è nascosta: per l'altezza si usa il valore calcolato.
         var showPicker = mode == Mode.Recording && _picker.HasPrompts;

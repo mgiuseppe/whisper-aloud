@@ -24,6 +24,7 @@ The interface is in Italian: below, each option is listed with its label as it a
   - **Detta e incolla**: dictate and paste Whisper's transcription as it is.
   - **Detta e riscrivi con Claude**: dictate, rewrite with the default prompt, paste.
   - **Riscrivi la selezione**: rewrite the text selected in the active window with the default prompt.
+- If a shortcut is already taken by another app, Whisper Aloud says so and still registers the others.
 - **Pressione minima** (minimum press, ms): hold mode only; shorter presses are treated as accidental and show a hint instead of recording.
 
 ## Transcription
@@ -81,6 +82,8 @@ The default prompt is chosen here or in the tray menu. While recording, the sele
 
 The status window follows each dictation without stealing focus, so the text still lands where you were typing:
 
+![Status window while listening](images/overlay-recording.png)
+
 - **Listening**: a waveform follows your voice, with a warning if the microphone sends no sound, and the prompt selector.
 - **Working**: transcription and rewriting show a running timer.
 - **Done**: the text, the total time and a **Copia** (Copy) button. It closes after 10 seconds, or stays open while the mouse is over it; results that are not pasted stay until you close them.
@@ -92,7 +95,7 @@ Drag it by its background, title or waveform: the position is saved, and a doubl
 
 ## Tray menu
 
-Right-click the tray icon for:
+Whisper Aloud lives in the system tray. The icon is grey when idle, red while listening and orange while working. Right-click it for:
 
 - **Copia ultima dettatura**: copies the last dictation again.
 - **Prompt di Claude**: chooses the default prompt.

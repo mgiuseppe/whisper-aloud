@@ -3,15 +3,17 @@
 Voice dictation for Windows in the style of Wispr Flow: hold a shortcut, speak, release, and the text appears in the active window. Transcription runs locally on your GPU; rewriting with Claude is optional and only happens when you ask for it.
 
 - **Local transcription**
-  - With [Whisper.net](https://github.com/sandrohanea/whisper.net) (whisper.cpp) and the quantized `large-v3-turbo` model, on the GPU through Vulkan: about half a second for a typical sentence.
+  - With [Whisper.net](https://github.com/sandrohanea/whisper.net) (whisper.cpp) and the quantized `large-v3-turbo` model, on the GPU through Vulkan.
 - **Optional rewriting with Claude**
-  - Through the [Claude Code](https://code.claude.com/docs/en/overview) CLI in headless mode, using the Claude subscription already signed in on the machine, with no pay-per-use API key.
+  - Through the [Claude Code](https://code.claude.com/docs/en/overview) CLI in headless mode, using the Claude subscription already signed in on the machine.
 - **Pick a prompt**
   - Light proofreading, meeting minutes, translation, or your own.
 
-![The status window while recording](docs/images/overlay-recording.png)
+![Dictating an email with Whisper Aloud](docs/images/usage.gif)
 
-The interface is in Italian and the defaults are tuned for Italian dictation; Whisper's language can be changed in the settings.
+The interface is in Italian and the defaults are tuned for Italian dictation.
+
+Whisper's language can be changed in the settings.
 
 ## Prerequisites
 
@@ -25,7 +27,7 @@ The interface is in Italian and the defaults are tuned for Italian dictation; Wh
 dotnet run -c Release --project src/WhisperAloud.App
 ```
 
-The app lives in the system tray. On first start it downloads the Whisper model (~550 MB) to `%LOCALAPPDATA%\WhisperAloud\models` and creates `%APPDATA%\WhisperAloud\settings.json`. The tray icon is grey when idle, red while listening and orange while working.
+On first start the app downloads the Whisper model (~550 MB) to `%LOCALAPPDATA%\WhisperAloud\models` and creates `%APPDATA%\WhisperAloud\settings.json`.
 
 ### Shortcuts
 
@@ -35,9 +37,7 @@ The app lives in the system tray. On first start it downloads the Whisper model 
 | `Ctrl+Alt+Shift+D` (hold) | dictate, rewrite with the default Claude prompt, paste |
 | `Ctrl+Alt+R` | rewrite the selected text with the default prompt and replace it |
 
-Instead of holding the shortcut you can switch to **start/stop** mode: press once to start recording and again to stop, handy for long dictations. Shortcuts can be changed in the settings; if one is already taken by another app, Whisper Aloud says so and still registers the others.
-
-While you dictate, a small status window shows what the app is doing and lets you pick a Claude prompt for that dictation. Prompts for proofreading, meeting minutes and translation are included, and you can edit them or add your own: see [prompts](docs/settings.md#prompts).
+Rewriting uses customizable [prompts](docs/settings.md#prompts).
 
 ## Settings
 
