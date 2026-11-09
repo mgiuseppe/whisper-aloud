@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/WhisperAloud.App/WhisperAloud.App.csproj" />
+    <Project Path="src/WhisperAloud.Core/WhisperAloud.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/WhisperAloud.Core.Tests/WhisperAloud.Core.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/WhisperAloud.Bench/WhisperAloud.Bench.csproj" />
+  </Folder>
+</Solution>

@@ -1,4 +1,4 @@
-# Dettatura
+# Whisper Aloud
 
 Dettatura vocale per Windows in stile Wispr Flow: tieni premuta una scorciatoia, parli, rilasci, e il testo compare nella finestra attiva. La trascrizione è locale; la riscrittura con Claude è opzionale, su una scorciatoia separata.
 
@@ -60,7 +60,7 @@ La CLI viene avviata con `--tools ""` (nessuno strumento: non può leggere file 
 
 ## Latenza
 
-Misure su MSI Raider GE76 (RTX 3080 Laptop, 8 GB), 29 ottobre 2026, con `tools/Dettatura.Bench`.
+Misure su MSI Raider GE76 (RTX 3080 Laptop, 8 GB), 29 ottobre 2026, con `tools/WhisperAloud.Bench`.
 
 **Trascrizione** (Whisper large-v3-turbo q5_0, Vulkan, mediana di 3 esecuzioni; il modello si carica in ~1,2 s all'avvio dell'app):
 
@@ -83,7 +83,7 @@ I numeri variano parecchio da una prova all'altra (rete, carico del servizio). I
 
 **Qualità**: con lo stesso prompt Haiku a volte riformula (ha tolto "volevo dire che", ha perso un "perché" trasformando la frase in una domanda), Sonnet è rimasto fedele in tutti i casi di `samples/trascrizioni.txt`. Per questo il default è Sonnet: la riscrittura è opzionale, e qualche secondo in più vale meno di un testo alterato.
 
-Totale tipico dal rilascio della scorciatoia: **~0,5 s** solo Whisper, **~4–5 s** con la riscrittura Sonnet (~2–3 s con Haiku). Ogni dettatura reale viene registrata in `%LOCALAPPDATA%\Dettatura\latency.csv`.
+Totale tipico dal rilascio della scorciatoia: **~0,5 s** solo Whisper, **~4–5 s** con la riscrittura Sonnet (~2–3 s con Haiku). Ogni dettatura reale viene registrata in `%LOCALAPPDATA%\WhisperAloud\latency.csv`.
 
 ### Perché un processo "di riserva"
 
@@ -98,10 +98,10 @@ Un processo persistente con `--input-format stream-json` risponde in 1,5–2 s, 
 ## Uso
 
 ```bash
-dotnet run -c Release --project src/Dettatura.App
+dotnet run -c Release --project src/WhisperAloud.App
 ```
 
-Al primo avvio l'app scarica il modello Whisper (~550 MB) in `%LOCALAPPDATA%\Dettatura\models` e crea le impostazioni in `%APPDATA%\Dettatura\settings.json`. Dal menu dell'icona nel tray si aprono impostazioni, registro latenze e log errori.
+Al primo avvio l'app scarica il modello Whisper (~550 MB) in `%LOCALAPPDATA%\WhisperAloud\models` e crea le impostazioni in `%APPDATA%\WhisperAloud\settings.json`. Dal menu dell'icona nel tray si aprono impostazioni, registro latenze e log errori.
 
 ### Finestra Impostazioni
 
@@ -131,16 +131,16 @@ Le modifiche fatte a mano nel file valgono al riavvio dell'app; quelle dalla fin
 
 | Progetto | Contenuto |
 |---|---|
-| `src/Dettatura.Core` | trascrizione (`WhisperTranscriber`), riscrittura (`ClaudeCleaner`, protocollo stream-json), impostazioni, registro latenze |
-| `src/Dettatura.App` | app WinForms nel tray in tema scuro (controlli disegnati in `ModernControls`, colori in `Theme`): `RegisterHotKey`, registrazione NAudio, finestrella di stato, finestra Impostazioni, incolla con `SendInput` |
-| `tools/Dettatura.Bench` | benchmark della pipeline su file audio |
-| `tests/Dettatura.Core.Tests` | test xUnit di protocollo, prompt e argomenti della CLI |
+| `src/WhisperAloud.Core` | trascrizione (`WhisperTranscriber`), riscrittura (`ClaudeCleaner`, protocollo stream-json), impostazioni, registro latenze |
+| `src/WhisperAloud.App` | app WinForms nel tray in tema scuro (controlli disegnati in `ModernControls`, colori in `Theme`): `RegisterHotKey`, registrazione NAudio, finestrella di stato, finestra Impostazioni, incolla con `SendInput` |
+| `tools/WhisperAloud.Bench` | benchmark della pipeline su file audio |
+| `tests/WhisperAloud.Core.Tests` | test xUnit di protocollo, prompt e argomenti della CLI |
 | `samples` | tre frasi sintetizzate con la voce Elsa di Windows (per i tempi di Whisper) e `trascrizioni.txt` (per qualità e tempi della riscrittura) |
 
 ```bash
 dotnet test
-dotnet run -c Release --project tools/Dettatura.Bench
-dotnet run -c Release --project tools/Dettatura.Bench -- --solo-whisper --gpu 1
+dotnet run -c Release --project tools/WhisperAloud.Bench
+dotnet run -c Release --project tools/WhisperAloud.Bench -- --solo-whisper --gpu 1
 ```
 
 ## Limiti noti
@@ -150,6 +150,10 @@ dotnet run -c Release --project tools/Dettatura.Bench -- --solo-whisper --gpu 1
 - I campioni audio sono voce sintetica: misurano bene i tempi, non la qualità della trascrizione sulla voce reale.
 - Il processo di riserva di `claude` resta avviato anche se non usi la riscrittura (memoria, nessuna richiesta al modello finché non serve).
 - Uso personale: ogni dettatura riscritta è una richiesta al modello e conta sui limiti d'uso dell'abbonamento Claude.
+
+## Uso personale e termini di Anthropic
+
+Whisper Aloud è un progetto personale, non affiliato ad Anthropic né approvato da Anthropic. Per la riscrittura avvia la CLI di Claude Code così come è distribuita, senza modificarla: l'accesso si fa con la procedura di Anthropic e l'app non legge, salva né trasmette credenziali o token. Chi la usa lo fa con il proprio account Claude, secondo i [termini di Anthropic](https://code.claude.com/docs/en/legal-and-compliance) e i limiti d'uso del proprio abbonamento. Per usarla dentro prodotti o servizi destinati ad altri, Anthropic richiede l'autenticazione con chiave API.
 
 ## Licenza
 

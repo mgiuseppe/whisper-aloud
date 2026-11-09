@@ -1,0 +1,555 @@
+﻿using System.Diagnostics;
+using System.Text.Json;
+using WhisperAloud.Core;
+using WhisperAloud.Core.Cleanup;
+using WhisperAloud.Core.Transcription;
+
+namespace WhisperAloud.App;
+
+/// <summary>App nel system tray: scorciatoie push-to-talk, registrazione, trascrizione, pulizia e incolla.</summary>
+internal sealed class TrayApp : ApplicationContext
+{
+    private const string Title = "Whisper Aloud";
+
+    private WhisperAloudSettings _settings;
+    private readonly NotifyIcon _tray;
+    private readonly ToolStripMenuItem _statusItem;
+    private readonly HotkeyWindow _hotkeys = new();
+    private MicRecorder _mic;
+    private readonly System.Windows.Forms.Timer _releaseTimer = new() { Interval = 15 };
+    private readonly Icon _idleIcon = TrayIcons.Circle(Color.FromArgb(110, 110, 124));
+    private readonly Icon _recordingIcon = TrayIcons.Circle(Theme.Red);
+    private readonly Icon _workingIcon = TrayIcons.Circle(Theme.Orange);
+
+    private OverlayForm? _overlay;
+    private SettingsForm? _settingsForm;
+    private readonly ToolStripMenuItem _copyLastItem;
+    private string? _lastText;
+    private ClaudeCleaner? _cleaner;
+    private WhisperTranscriber? _transcriber;
+    private Hotkey? _heldHotkey;
+    /// <summary>Prompt di Claude per la dettatura in corso; null = solo trascrizione. Si cambia dalla finestrella.</summary>
+    private string? _heldPrompt;
+    private readonly Stopwatch _recording = new();
+    private bool _busy;
+
+    public TrayApp(WhisperAloudSettings settings)
+    {
+        _settings = settings;
+        _mic = new MicRecorder(settings.MicrophoneDevice);
+        _overlay = settings.ShowOverlay ? CreateOverlay() : null;
+        _copyLastItem = new ToolStripMenuItem("Copia ultima dettatura", null, (_, _) => CopyLast()) { Enabled = false };
+
+        _statusItem = new ToolStripMenuItem("Avvio...") { Enabled = false };
+        var menu = new ContextMenuStrip
+        {
+            Renderer = new DarkMenuRenderer(),
+            BackColor = Theme.Surface,
+            ForeColor = Theme.Fore,
+            Font = Theme.Body(9.5f),
+            Padding = new Padding(0, Theme.S(4), 0, Theme.S(4)),
+        };
+        menu.Items.Add(_statusItem);
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(_copyLastItem);
+        menu.Items.Add(BuildPromptMenu());
+        menu.Items.Add(BuildMicrophoneMenu());
+        menu.Items.Add("Impostazioni...", null, (_, _) => OpenSettings());
+        menu.Items.Add("Registro latenze", null, (_, _) => OpenFile(AppPaths.LatencyLog));
+        menu.Items.Add("Log errori", null, (_, _) => OpenFile(AppPaths.AppLog));
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("Esci", null, (_, _) => ExitThread());
+
+        _tray = new NotifyIcon { Icon = _workingIcon, Text = Title, ContextMenuStrip = menu, Visible = true };
+        _tray.DoubleClick += (_, _) => OpenSettings();
+        _releaseTimer.Tick += OnReleaseTick;
+
+        AppLog.Info($"avvio, microfono: {MicRecorder.DeviceName(settings.MicrophoneDevice)}");
+        RegisterHotkeys();
+        StartCleaner();
+        _ = LoadTranscriberAsync();
+    }
+
+    /// <summary>Sottomenu per scegliere il microfono; la scelta viene salvata nelle impostazioni.</summary>
+    private ToolStripMenuItem BuildMicrophoneMenu()
+    {
+        var root = new ToolStripMenuItem("Microfono");
+        root.DropDownOpening += (_, _) =>
+        {
+            root.DropDownItems.Clear();
+            var devices = new List<(int Index, string Name)> { (-1, "Predefinito di Windows") };
+            devices.AddRange(MicRecorder.ListDevices());
+            foreach (var (index, name) in devices)
+            {
+                var item = new ToolStripMenuItem(name) { Checked = index == _settings.MicrophoneDevice };
+                item.Click += (_, _) => SelectMicrophone(index);
+                root.DropDownItems.Add(item);
+            }
+        };
+        root.DropDownItems.Add("..."); // segnaposto: senza voci il sottomenu non si apre
+        return root;
+    }
+
+    /// <summary>Sottomenu per scegliere il prompt predefinito di Claude; la scelta viene salvata.</summary>
+    private ToolStripMenuItem BuildPromptMenu()
+    {
+        var root = new ToolStripMenuItem("Prompt di Claude");
+        root.DropDownOpening += (_, _) =>
+        {
+            root.DropDownItems.Clear();
+            var selected = _settings.Claude.FindPrompt(null).Name;
+            foreach (var prompt in _settings.Claude.Prompts)
+            {
+                var item = new ToolStripMenuItem(prompt.Name) { Checked = prompt.Name == selected };
+                item.Click += (_, _) =>
+                {
+                    _settings.Claude.SelectedPrompt = prompt.Name;
+                    _settings.Save();
+                    AppLog.Info($"prompt predefinito: {prompt.Name}");
+                };
+                root.DropDownItems.Add(item);
+            }
+        };
+        root.DropDownItems.Add("..."); // segnaposto: senza voci il sottomenu non si apre
+        return root;
+    }
+
+    private void SelectMicrophone(int index)
+    {
+        if (_mic.IsRecording) return;
+        _mic.Dispose();
+        _mic = new MicRecorder(index);
+        _settings.MicrophoneDevice = index;
+        _settings.Save();
+        AppLog.Info($"microfono scelto: {MicRecorder.DeviceName(index)}");
+    }
+
+    private void RegisterHotkeys()
+    {
+        _hotkeys.UnregisterAll();
+        // Ogni scorciatoia si registra per conto suo: se una è già occupata, le altre funzionano lo stesso.
+        var errors = new List<string>();
+        Register(_settings.HotkeyDictate, hotkey => () => StartDictation(hotkey, cleanup: false));
+        Register(_settings.HotkeyDictateWithClaude, hotkey => () => StartDictation(hotkey, cleanup: true));
+        Register(_settings.HotkeyCleanSelection, ignored => () => _ = CleanSelectionAsync());
+        if (errors.Count > 0) Report(new InvalidOperationException(string.Join(Environment.NewLine, errors)));
+        AppLog.Info($"scorciatoie attive: {_settings.HotkeyDictate}, {_settings.HotkeyDictateWithClaude}, " +
+                    $"{_settings.HotkeyCleanSelection}{(errors.Count > 0 ? $" (errori: {errors.Count})" : string.Empty)}");
+
+        void Register(string text, Func<Hotkey, Action> handler)
+        {
+            try
+            {
+                var hotkey = Hotkey.Parse(text);
+                _hotkeys.Register(hotkey, handler(hotkey));
+            }
+            catch (Exception e) when (e is FormatException or InvalidOperationException)
+            {
+                errors.Add(e.Message);
+            }
+        }
+    }
+
+    private void StartCleaner()
+    {
+        try
+        {
+            _cleaner = new ClaudeCleaner(_settings.Claude);
+        }
+        catch (Exception e)
+        {
+            Report(new InvalidOperationException($"Pulizia con Claude non disponibile, resta la sola trascrizione. {e.Message}", e));
+        }
+    }
+
+    private async Task LoadTranscriberAsync()
+    {
+        var progress = new Progress<string>(SetStatus);
+        try
+        {
+            _transcriber = await Task.Run(() => WhisperTranscriber.CreateAsync(
+                _settings.ResolveModelPath(), _settings.Language, _settings.WhisperPrompt, progress,
+                _settings.GpuDevice, message => AppLog.Info($"whisper: {message}")));
+            SetIdle();
+            _tray.ShowBalloonTip(3000, Title,
+                $"Pronta ({WhisperTranscriber.LoadedRuntime}). Tieni premuto {_settings.HotkeyDictate} per dettare.",
+                ToolTipIcon.Info);
+        }
+        catch (HttpRequestException e)
+        {
+            SetStatus("Modello Whisper non scaricato");
+            Report(new InvalidOperationException(
+                $"Download del modello Whisper non riuscito (rete). Riavvia l'app per riprovare, oppure scarica " +
+                $"ggml-large-v3-turbo-q5_0.bin da huggingface.co/ggerganov/whisper.cpp in {AppPaths.ModelsDir}.", e));
+        }
+        catch (Exception e)
+        {
+            SetStatus("Whisper non disponibile");
+            Report(e);
+        }
+    }
+
+    private void StartDictation(Hotkey hotkey, bool cleanup)
+    {
+        AppLog.Info($"{hotkey.Text} premuta (occupata: {_busy}, in registrazione: {_mic.IsRecording}, whisper pronto: {_transcriber is not null})");
+        // Modalità avvio/stop: la seconda pressione (di una delle due scorciatoie di dettatura) termina.
+        if (_mic.IsRecording && _settings.Mode == DictationMode.Toggle && _heldHotkey is not null)
+        {
+            var held = _heldHotkey.Text;
+            _heldHotkey = null;
+            _ = FinishDictationAsync(held);
+            return;
+        }
+        if (_busy || _mic.IsRecording) return;
+        if (_transcriber is null)
+        {
+            Notify("Non ancora pronta", "Il modello Whisper si sta ancora caricando: riprova tra qualche secondo.");
+            return;
+        }
+
+        try
+        {
+            _mic.Start();
+        }
+        catch (Exception e)
+        {
+            Report(new InvalidOperationException($"Microfono non disponibile: {e.Message}", e));
+            return;
+        }
+
+        _heldHotkey = hotkey;
+        _heldPrompt = cleanup && _cleaner is not null ? _settings.Claude.FindPrompt(null).Name : null;
+        _recording.Restart();
+        _tray.Icon = _recordingIcon;
+        SetStatus(_heldPrompt is null ? "In ascolto" : $"In ascolto (Claude: {_heldPrompt})");
+        var toggle = _settings.Mode == DictationMode.Toggle;
+        _overlay?.ShowRecording("In ascolto", toggle ? $"{hotkey.Text} per finire" : $"rilascia {hotkey.Text}", () => _mic.Level,
+            _cleaner is null ? null : _settings.Claude.Prompts.Select(p => p.Name).ToList(), _heldPrompt,
+            name =>
+            {
+                _heldPrompt = name;
+                AppLog.Info($"prompt scelto per questa dettatura: {name ?? "solo trascrizione"}");
+            });
+        if (!toggle) _releaseTimer.Start();
+    }
+
+    /// <summary>RegisterHotKey segnala solo la pressione: il rilascio si rileva controllando il tasto.</summary>
+    private void OnReleaseTick(object? sender, EventArgs e)
+    {
+        if (_heldHotkey is null || Native.IsKeyDown((int)_heldHotkey.Key)) return;
+        _releaseTimer.Stop();
+        var hotkey = _heldHotkey.Text;
+        _heldHotkey = null;
+        _ = FinishDictationAsync(hotkey);
+    }
+
+    private async Task FinishDictationAsync(string hotkey)
+    {
+        var preset = _heldPrompt is null || _cleaner is null ? null : _settings.Claude.FindPrompt(_heldPrompt);
+        var samples = _mic.Stop();
+        _recording.Stop();
+        var rms = WhisperTranscriber.Rms(samples);
+        AppLog.Info($"rilasciata dopo {_recording.ElapsedMilliseconds} ms, {samples.Length} campioni, livello {rms:0.0000}");
+        if (_transcriber is null)
+        {
+            SetIdle();
+            return;
+        }
+        if (_settings.Mode == DictationMode.PushToTalk && _recording.ElapsedMilliseconds < _settings.MinRecordingMs)
+        {
+            Notify("Pressione troppo breve", $"Tieni premuto {hotkey} mentre parli e rilascia quando hai finito.");
+            SetIdle();
+            return;
+        }
+        if (rms < WhisperTranscriber.SilenceRms)
+        {
+            Notify("Nessun suono dal microfono",
+                $"Il microfono \"{MicRecorder.DeviceName(_settings.MicrophoneDevice)}\" non manda audio. " +
+                "Scegline un altro dal menu Microfono dell'icona nel tray.");
+            SetIdle();
+            return;
+        }
+
+        _busy = true;
+        _tray.Icon = _workingIcon;
+        var total = Stopwatch.StartNew();
+        long transcribeMs = 0, cleanMs = 0, pasteMs = 0;
+        try
+        {
+            SetStatus("Trascrizione...");
+            _overlay?.ShowWorking("Trascrizione…");
+            var step = Stopwatch.StartNew();
+            var text = await Task.Run(() => _transcriber.TranscribeAsync(samples));
+            transcribeMs = step.ElapsedMilliseconds;
+            AppLog.Info($"trascrizione in {transcribeMs} ms: {text.Length} caratteri");
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                Notify("Nessun testo riconosciuto", "Whisper non ha riconosciuto parole: riprova parlando più vicino al microfono.");
+                return;
+            }
+
+            var paste = true;
+            if (preset is not null && _cleaner is not null)
+            {
+                SetStatus($"Claude: {preset.Name}...");
+                _overlay?.ShowWorking($"Claude · {preset.Name}…");
+                step.Restart();
+                try
+                {
+                    text = await _cleaner.CleanAsync(text, preset.Instructions);
+                    paste = preset.Paste;
+                    AppLog.Info($"claude ({preset.Name}) in {step.ElapsedMilliseconds} ms: {text.Length} caratteri");
+                }
+                catch (Exception e) when (e is ClaudeCliException or OperationCanceledException or IOException)
+                {
+                    Report(new InvalidOperationException($"Riscrittura non riuscita, incollo la trascrizione grezza. {e.Message}", e));
+                }
+                cleanMs = step.ElapsedMilliseconds;
+            }
+
+            step.Restart();
+            if (paste)
+            {
+                await TextInjector.PasteAsync(_settings.AppendSpace ? text + " " : text, _settings.RestoreClipboard);
+                _overlay?.ShowResult("Incollato", $"{total.Elapsed.TotalSeconds:0.0} s", text);
+            }
+            else
+            {
+                // Prompt che non incolla (es. Minuta): il risultato resta nella finestrella finché non si chiude.
+                _overlay?.ShowResult($"{preset!.Name} pronta", $"{total.Elapsed.TotalSeconds:0.0} s", text, sticky: true);
+            }
+            pasteMs = step.ElapsedMilliseconds;
+            Remember(text);
+
+            LatencyLog.Append(new LatencySample(DateTimeOffset.Now, preset is null ? "raw" : "clean",
+                samples.Length / (double)WhisperTranscriber.SampleRate, transcribeMs, cleanMs, pasteMs,
+                total.ElapsedMilliseconds, text.Length));
+        }
+        catch (Exception e)
+        {
+            Report(e);
+        }
+        finally
+        {
+            _busy = false;
+            SetIdle();
+        }
+    }
+
+    private async Task CleanSelectionAsync()
+    {
+        AppLog.Info($"{_settings.HotkeyCleanSelection} premuta (occupata: {_busy}, claude pronto: {_cleaner is not null})");
+        if (_busy || _mic.IsRecording) return;
+        if (_cleaner is null)
+        {
+            Notify("Claude non disponibile", "La CLI claude non è stata trovata: controlla l'eseguibile nelle impostazioni.");
+            return;
+        }
+
+        _busy = true;
+        _tray.Icon = _workingIcon;
+        var total = Stopwatch.StartNew();
+        try
+        {
+            var (selection, original) = await TextInjector.CopySelectionAsync();
+            AppLog.Info($"selezione copiata: {selection?.Length ?? 0} caratteri");
+            if (string.IsNullOrWhiteSpace(selection))
+            {
+                TextInjector.Restore(original);
+                Notify("Nessun testo selezionato", "Seleziona il testo da sistemare e poi premi la scorciatoia.");
+                return;
+            }
+
+            var preset = _settings.Claude.FindPrompt(null);
+            SetStatus($"Claude: {preset.Name} sulla selezione...");
+            _overlay?.ShowWorking($"Claude · {preset.Name} sulla selezione…");
+            var step = Stopwatch.StartNew();
+            var cleaned = await _cleaner.CleanAsync(selection, preset.Instructions);
+            var cleanMs = step.ElapsedMilliseconds;
+
+            step.Restart();
+            AppLog.Info($"selezione riscritta ({preset.Name}) in {cleanMs} ms: {cleaned.Length} caratteri");
+            if (preset.Paste)
+            {
+                await TextInjector.PasteAsync(cleaned, _settings.RestoreClipboard, original);
+                _overlay?.ShowResult("Selezione riscritta", $"{total.Elapsed.TotalSeconds:0.0} s", cleaned);
+            }
+            else
+            {
+                TextInjector.Restore(original);
+                _overlay?.ShowResult($"{preset.Name} pronta", $"{total.Elapsed.TotalSeconds:0.0} s", cleaned, sticky: true);
+            }
+            Remember(cleaned);
+            LatencyLog.Append(new LatencySample(DateTimeOffset.Now, "selection", 0, 0, cleanMs,
+                step.ElapsedMilliseconds, total.ElapsedMilliseconds, cleaned.Length));
+        }
+        catch (Exception e)
+        {
+            Report(e);
+        }
+        finally
+        {
+            _busy = false;
+            SetIdle();
+        }
+    }
+
+    private void OpenSettings()
+    {
+        if (_settingsForm is not null)
+        {
+            _settingsForm.Activate();
+            return;
+        }
+        if (_busy || _mic.IsRecording)
+        {
+            Notify("Un momento", "Le impostazioni si aprono a dettatura finita.");
+            return;
+        }
+
+        try
+        {
+            using (_settingsForm = new SettingsForm(_settings, _hotkeys.UnregisterAll, RegisterHotkeys))
+            {
+                if (_settingsForm.ShowDialog() == DialogResult.OK && _settingsForm.Result is { } updated) _ = ApplySettingsAsync(updated);
+            }
+        }
+        finally
+        {
+            _settingsForm = null;
+            RegisterHotkeys();
+        }
+    }
+
+    /// <summary>Applica le impostazioni salvate senza riavvio: ricarica solo i componenti toccati.</summary>
+    private async Task ApplySettingsAsync(WhisperAloudSettings updated)
+    {
+        // Con la finestra aperta si può dettare: si applica a dettatura finita, per non cambiare microfono o modello a metà.
+        while (_busy || _mic.IsRecording) await Task.Delay(200);
+        var old = _settings;
+        // La posizione della finestrella non è nella finestra Impostazioni: si tiene quella attuale.
+        updated.OverlayLeft = old.OverlayLeft;
+        updated.OverlayTop = old.OverlayTop;
+        _settings = updated;
+        try
+        {
+            _settings.Save();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Report(new InvalidOperationException($"Impostazioni non salvate su disco: {e.Message}", e));
+        }
+        AppLog.Info($"impostazioni salvate (modalità {updated.Mode}, microfono {MicRecorder.DeviceName(updated.MicrophoneDevice)}, GPU {updated.GpuDevice})");
+
+        if (old.MicrophoneDevice != updated.MicrophoneDevice)
+        {
+            _mic.Dispose();
+            _mic = new MicRecorder(updated.MicrophoneDevice);
+        }
+
+        if (old.ShowOverlay != updated.ShowOverlay)
+        {
+            _overlay?.Dispose();
+            _overlay = updated.ShowOverlay ? CreateOverlay() : null;
+        }
+
+        if (JsonSerializer.Serialize(old.Claude) != JsonSerializer.Serialize(updated.Claude))
+        {
+            var previous = _cleaner;
+            _cleaner = null;
+            if (previous is not null) _ = previous.DisposeAsync().AsTask();
+            StartCleaner();
+        }
+
+        if (old.GpuDevice != updated.GpuDevice || old.Language != updated.Language ||
+            old.WhisperModel != updated.WhisperModel || old.WhisperPrompt != updated.WhisperPrompt)
+        {
+            _ = ReloadTranscriberAsync();
+        }
+    }
+
+    private async Task ReloadTranscriberAsync()
+    {
+        var previous = _transcriber;
+        _transcriber = null;
+        _tray.Icon = _workingIcon;
+        _overlay?.ShowWorking("Ricarico Whisper con le nuove impostazioni…");
+        if (previous is not null) await previous.DisposeAsync();
+        await LoadTranscriberAsync();
+        if (_transcriber is not null) _overlay?.ShowMessage("Pronta", $"Whisper ricaricato ({WhisperTranscriber.LoadedRuntime}).");
+    }
+
+    private OverlayForm CreateOverlay()
+    {
+        var overlay = new OverlayForm
+        {
+            CustomLocation = _settings.OverlayLeft is { } left && _settings.OverlayTop is { } top ? new Point(left, top) : null,
+        };
+        overlay.PositionChanged += position =>
+        {
+            _settings.OverlayLeft = position?.X;
+            _settings.OverlayTop = position?.Y;
+            _settings.Save();
+        };
+        return overlay;
+    }
+
+    private void Remember(string text)
+    {
+        _lastText = text;
+        _copyLastItem.Enabled = true;
+    }
+
+    private void CopyLast()
+    {
+        if (_lastText is null) return;
+        Clipboard.SetText(_lastText);
+        _overlay?.ShowResult("Ultima dettatura copiata", string.Empty, _lastText);
+    }
+
+    /// <summary>Avviso all'utente: nella finestrella se è attiva, altrimenti nel fumetto del tray.</summary>
+    private void Notify(string title, string message)
+    {
+        if (_overlay is not null) _overlay.ShowMessage(title, message);
+        else _tray.ShowBalloonTip(4000, Title, $"{title}. {message}", ToolTipIcon.Warning);
+    }
+
+    private void SetIdle()
+    {
+        _tray.Icon = _idleIcon;
+        SetStatus(_transcriber is null ? "Whisper non pronto" : "Pronta");
+    }
+
+    private void SetStatus(string status)
+    {
+        _statusItem.Text = status;
+        var tip = $"{Title}: {status}";
+        _tray.Text = tip.Length > 63 ? tip[..63] : tip;
+    }
+
+    private void Report(Exception e)
+    {
+        AppLog.Write(e);
+        if (_overlay is not null) _overlay.ShowMessage("Errore", e.Message);
+        else _tray.ShowBalloonTip(5000, Title, e.Message, ToolTipIcon.Error);
+    }
+
+    internal static void OpenFile(string path)
+    {
+        if (!File.Exists(path)) File.WriteAllText(path, string.Empty);
+        Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+    }
+
+    protected override void ExitThreadCore()
+    {
+        _releaseTimer.Dispose();
+        _hotkeys.Dispose();
+        _mic.Dispose();
+        _overlay?.Dispose();
+        _tray.Visible = false;
+        _tray.Dispose();
+        _cleaner?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        _transcriber?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        base.ExitThreadCore();
+    }
+}
