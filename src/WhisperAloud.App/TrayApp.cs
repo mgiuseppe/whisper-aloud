@@ -3,6 +3,7 @@ using System.Text.Json;
 using WhisperAloud.Core;
 using WhisperAloud.Core.Cleanup;
 using WhisperAloud.Core.Transcription;
+using static WhisperAloud.Core.Loc;
 
 namespace WhisperAloud.App;
 
@@ -38,9 +39,9 @@ internal sealed class TrayApp : ApplicationContext
         _settings = settings;
         _mic = new MicRecorder(settings.MicrophoneDevice);
         _overlay = settings.ShowOverlay ? CreateOverlay() : null;
-        _copyLastItem = new ToolStripMenuItem("Copia ultima dettatura", null, (_, _) => CopyLast()) { Enabled = false };
+        _copyLastItem = new ToolStripMenuItem(T("Copia ultima dettatura", "Copy last dictation"), null, (_, _) => CopyLast()) { Enabled = false };
 
-        _statusItem = new ToolStripMenuItem("Avvio...") { Enabled = false };
+        _statusItem = new ToolStripMenuItem(T("Avvio...", "Starting...")) { Enabled = false };
         var menu = new ContextMenuStrip
         {
             Renderer = new DarkMenuRenderer(),
@@ -54,11 +55,11 @@ internal sealed class TrayApp : ApplicationContext
         menu.Items.Add(_copyLastItem);
         menu.Items.Add(BuildPromptMenu());
         menu.Items.Add(BuildMicrophoneMenu());
-        menu.Items.Add("Impostazioni...", null, (_, _) => OpenSettings());
-        menu.Items.Add("Registro latenze", null, (_, _) => OpenFile(AppPaths.LatencyLog));
-        menu.Items.Add("Log errori", null, (_, _) => OpenFile(AppPaths.AppLog));
+        menu.Items.Add(T("Impostazioni...", "Settings..."), null, (_, _) => OpenSettings());
+        menu.Items.Add(T("Registro latenze", "Latency log"), null, (_, _) => OpenFile(AppPaths.LatencyLog));
+        menu.Items.Add(T("Log errori", "Diagnostic log"), null, (_, _) => OpenFile(AppPaths.AppLog));
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Esci", null, (_, _) => ExitThread());
+        menu.Items.Add(T("Esci", "Quit"), null, (_, _) => ExitThread());
 
         _tray = new NotifyIcon { Icon = _workingIcon, Text = Title, ContextMenuStrip = menu, Visible = true };
         _tray.DoubleClick += (_, _) => OpenSettings();
@@ -73,11 +74,11 @@ internal sealed class TrayApp : ApplicationContext
     /// <summary>Sottomenu per scegliere il microfono; la scelta viene salvata nelle impostazioni.</summary>
     private ToolStripMenuItem BuildMicrophoneMenu()
     {
-        var root = new ToolStripMenuItem("Microfono");
+        var root = new ToolStripMenuItem(T("Microfono", "Microphone"));
         root.DropDownOpening += (_, _) =>
         {
             root.DropDownItems.Clear();
-            var devices = new List<(int Index, string Name)> { (-1, "Predefinito di Windows") };
+            var devices = new List<(int Index, string Name)> { (-1, T("Predefinito di Windows", "Windows default")) };
             devices.AddRange(MicRecorder.ListDevices());
             foreach (var (index, name) in devices)
             {
@@ -93,7 +94,7 @@ internal sealed class TrayApp : ApplicationContext
     /// <summary>Sottomenu per scegliere il prompt predefinito di Claude; la scelta viene salvata.</summary>
     private ToolStripMenuItem BuildPromptMenu()
     {
-        var root = new ToolStripMenuItem("Prompt di Claude");
+        var root = new ToolStripMenuItem(T("Prompt di Claude", "Claude prompt"));
         root.DropDownOpening += (_, _) =>
         {
             root.DropDownItems.Clear();
@@ -158,7 +159,8 @@ internal sealed class TrayApp : ApplicationContext
         }
         catch (Exception e)
         {
-            Report(new InvalidOperationException($"Pulizia con Claude non disponibile, resta la sola trascrizione. {e.Message}", e));
+            Report(new InvalidOperationException(T($"Riscrittura con Claude non disponibile, resta la sola trascrizione. {e.Message}",
+                $"Rewriting with Claude is not available, transcription still works. {e.Message}"), e));
         }
     }
 
@@ -172,19 +174,22 @@ internal sealed class TrayApp : ApplicationContext
                 _settings.GpuDevice, message => AppLog.Info($"whisper: {message}")));
             SetIdle();
             _tray.ShowBalloonTip(3000, Title,
-                $"Pronta ({WhisperTranscriber.LoadedRuntime}). Tieni premuto {_settings.HotkeyDictate} per dettare.",
+                T($"Pronta ({WhisperTranscriber.LoadedRuntime}). Tieni premuto {_settings.HotkeyDictate} per dettare.",
+                    $"Ready ({WhisperTranscriber.LoadedRuntime}). Hold {_settings.HotkeyDictate} to dictate."),
                 ToolTipIcon.Info);
         }
         catch (HttpRequestException e)
         {
-            SetStatus("Modello Whisper non scaricato");
+            SetStatus(T("Modello Whisper non scaricato", "Whisper model not downloaded"));
             Report(new InvalidOperationException(
-                $"Download del modello Whisper non riuscito (rete). Riavvia l'app per riprovare, oppure scarica " +
-                $"ggml-large-v3-turbo-q5_0.bin da huggingface.co/ggerganov/whisper.cpp in {AppPaths.ModelsDir}.", e));
+                T($"Download del modello Whisper non riuscito (rete). Riavvia l'app per riprovare, oppure scarica " +
+                  $"ggml-large-v3-turbo-q5_0.bin da huggingface.co/ggerganov/whisper.cpp in {AppPaths.ModelsDir}.",
+                  $"Could not download the Whisper model (network). Restart the app to try again, or download " +
+                  $"ggml-large-v3-turbo-q5_0.bin from huggingface.co/ggerganov/whisper.cpp into {AppPaths.ModelsDir}."), e));
         }
         catch (Exception e)
         {
-            SetStatus("Whisper non disponibile");
+            SetStatus(T("Whisper non disponibile", "Whisper not available"));
             Report(e);
         }
     }
@@ -203,7 +208,8 @@ internal sealed class TrayApp : ApplicationContext
         if (_busy || _mic.IsRecording) return;
         if (_transcriber is null)
         {
-            Notify("Non ancora pronta", "Il modello Whisper si sta ancora caricando: riprova tra qualche secondo.");
+            Notify(T("Non ancora pronta", "Not ready yet"),
+                T("Il modello Whisper si sta ancora caricando: riprova tra qualche secondo.", "The Whisper model is still loading: try again in a few seconds."));
             return;
         }
 
@@ -213,7 +219,7 @@ internal sealed class TrayApp : ApplicationContext
         }
         catch (Exception e)
         {
-            Report(new InvalidOperationException($"Microfono non disponibile: {e.Message}", e));
+            Report(new InvalidOperationException(T($"Microfono non disponibile: {e.Message}", $"Microphone not available: {e.Message}"), e));
             return;
         }
 
@@ -221,9 +227,10 @@ internal sealed class TrayApp : ApplicationContext
         _heldPrompt = cleanup && _cleaner is not null ? _settings.Claude.FindPrompt(null).Name : null;
         _recording.Restart();
         _tray.Icon = _recordingIcon;
-        SetStatus(_heldPrompt is null ? "In ascolto" : $"In ascolto (Claude: {_heldPrompt})");
+        SetStatus(_heldPrompt is null ? T("In ascolto", "Listening") : T($"In ascolto (Claude: {_heldPrompt})", $"Listening (Claude: {_heldPrompt})"));
         var toggle = _settings.Mode == DictationMode.Toggle;
-        _overlay?.ShowRecording("In ascolto", toggle ? $"{hotkey.Text} per finire" : $"rilascia {hotkey.Text}", () => _mic.Level,
+        _overlay?.ShowRecording(T("In ascolto", "Listening"),
+            toggle ? T($"{hotkey.Text} per finire", $"{hotkey.Text} to stop") : T($"rilascia {hotkey.Text}", $"release {hotkey.Text}"), () => _mic.Level,
             _cleaner is null ? null : _settings.Claude.Prompts.Select(p => p.Name).ToList(), _heldPrompt,
             name =>
             {
@@ -257,15 +264,17 @@ internal sealed class TrayApp : ApplicationContext
         }
         if (_settings.Mode == DictationMode.PushToTalk && _recording.ElapsedMilliseconds < _settings.MinRecordingMs)
         {
-            Notify("Pressione troppo breve", $"Tieni premuto {hotkey} mentre parli e rilascia quando hai finito.");
+            Notify(T("Pressione troppo breve", "Press too short"),
+                T($"Tieni premuto {hotkey} mentre parli e rilascia quando hai finito.", $"Hold {hotkey} while you speak and release it when you are done."));
             SetIdle();
             return;
         }
         if (rms < WhisperTranscriber.SilenceRms)
         {
-            Notify("Nessun suono dal microfono",
-                $"Il microfono \"{MicRecorder.DeviceName(_settings.MicrophoneDevice)}\" non manda audio. " +
-                "Scegline un altro dal menu Microfono dell'icona nel tray.");
+            var device = MicRecorder.DeviceName(_settings.MicrophoneDevice);
+            Notify(T("Nessun suono dal microfono", "No sound from the microphone"),
+                T($"Il microfono \"{device}\" non manda audio. Scegline un altro dal menu Microfono dell'icona nel tray.",
+                  $"The microphone \"{device}\" sends no audio. Pick another one from the Microphone menu of the tray icon."));
             SetIdle();
             return;
         }
@@ -276,15 +285,16 @@ internal sealed class TrayApp : ApplicationContext
         long transcribeMs = 0, cleanMs = 0, pasteMs = 0;
         try
         {
-            SetStatus("Trascrizione...");
-            _overlay?.ShowWorking("Trascrizione…");
+            SetStatus(T("Trascrizione...", "Transcribing..."));
+            _overlay?.ShowWorking(T("Trascrizione…", "Transcribing…"));
             var step = Stopwatch.StartNew();
             var text = await Task.Run(() => _transcriber.TranscribeAsync(samples));
             transcribeMs = step.ElapsedMilliseconds;
             AppLog.Info($"trascrizione in {transcribeMs} ms: {text.Length} caratteri");
             if (string.IsNullOrWhiteSpace(text))
             {
-                Notify("Nessun testo riconosciuto", "Whisper non ha riconosciuto parole: riprova parlando più vicino al microfono.");
+                Notify(T("Nessun testo riconosciuto", "No words recognised"),
+                    T("Whisper non ha riconosciuto parole: riprova parlando più vicino al microfono.", "Whisper recognised no words: try again closer to the microphone."));
                 return;
             }
 
@@ -302,7 +312,7 @@ internal sealed class TrayApp : ApplicationContext
                 }
                 catch (Exception e) when (e is ClaudeCliException or OperationCanceledException or IOException)
                 {
-                    Report(new InvalidOperationException($"Riscrittura non riuscita, incollo la trascrizione grezza. {e.Message}", e));
+                    Report(new InvalidOperationException(T($"Riscrittura non riuscita, incollo la trascrizione grezza. {e.Message}", $"Rewriting failed, pasting the raw transcription. {e.Message}"), e));
                 }
                 cleanMs = step.ElapsedMilliseconds;
             }
@@ -311,12 +321,12 @@ internal sealed class TrayApp : ApplicationContext
             if (paste)
             {
                 await TextInjector.PasteAsync(_settings.AppendSpace ? text + " " : text, _settings.RestoreClipboard);
-                _overlay?.ShowResult("Incollato", $"{total.Elapsed.TotalSeconds:0.0} s", text);
+                _overlay?.ShowResult(T("Incollato", "Pasted"), $"{total.Elapsed.TotalSeconds:0.0} s", text);
             }
             else
             {
                 // Prompt che non incolla (es. Minuta): il risultato resta nella finestrella finché non si chiude.
-                _overlay?.ShowResult($"{preset!.Name} pronta", $"{total.Elapsed.TotalSeconds:0.0} s", text, sticky: true);
+                _overlay?.ShowResult(T($"{preset!.Name} pronta", $"{preset!.Name} ready"), $"{total.Elapsed.TotalSeconds:0.0} s", text, sticky: true);
             }
             pasteMs = step.ElapsedMilliseconds;
             Remember(text);
@@ -342,7 +352,8 @@ internal sealed class TrayApp : ApplicationContext
         if (_busy || _mic.IsRecording) return;
         if (_cleaner is null)
         {
-            Notify("Claude non disponibile", "La CLI claude non è stata trovata: controlla l'eseguibile nelle impostazioni.");
+            Notify(T("Claude non disponibile", "Claude not available"),
+                T("La CLI claude non è stata trovata: controlla l'eseguibile nelle impostazioni.", "The claude CLI was not found: check the executable in the settings."));
             return;
         }
 
@@ -356,13 +367,14 @@ internal sealed class TrayApp : ApplicationContext
             if (string.IsNullOrWhiteSpace(selection))
             {
                 TextInjector.Restore(original);
-                Notify("Nessun testo selezionato", "Seleziona il testo da sistemare e poi premi la scorciatoia.");
+                Notify(T("Nessun testo selezionato", "No text selected"),
+                    T("Seleziona il testo da sistemare e poi premi la scorciatoia.", "Select the text to rewrite, then press the shortcut."));
                 return;
             }
 
             var preset = _settings.Claude.FindPrompt(null);
-            SetStatus($"Claude: {preset.Name} sulla selezione...");
-            _overlay?.ShowWorking($"Claude · {preset.Name} sulla selezione…");
+            SetStatus(T($"Claude: {preset.Name} sulla selezione...", $"Claude: {preset.Name} on the selection..."));
+            _overlay?.ShowWorking(T($"Claude · {preset.Name} sulla selezione…", $"Claude · {preset.Name} on the selection…"));
             var step = Stopwatch.StartNew();
             var cleaned = await _cleaner.CleanAsync(selection, preset.Instructions);
             var cleanMs = step.ElapsedMilliseconds;
@@ -372,12 +384,12 @@ internal sealed class TrayApp : ApplicationContext
             if (preset.Paste)
             {
                 await TextInjector.PasteAsync(cleaned, _settings.RestoreClipboard, original);
-                _overlay?.ShowResult("Selezione riscritta", $"{total.Elapsed.TotalSeconds:0.0} s", cleaned);
+                _overlay?.ShowResult(T("Selezione riscritta", "Selection rewritten"), $"{total.Elapsed.TotalSeconds:0.0} s", cleaned);
             }
             else
             {
                 TextInjector.Restore(original);
-                _overlay?.ShowResult($"{preset.Name} pronta", $"{total.Elapsed.TotalSeconds:0.0} s", cleaned, sticky: true);
+                _overlay?.ShowResult(T($"{preset.Name} pronta", $"{preset.Name} ready"), $"{total.Elapsed.TotalSeconds:0.0} s", cleaned, sticky: true);
             }
             Remember(cleaned);
             LatencyLog.Append(new LatencySample(DateTimeOffset.Now, "selection", 0, 0, cleanMs,
@@ -403,7 +415,7 @@ internal sealed class TrayApp : ApplicationContext
         }
         if (_busy || _mic.IsRecording)
         {
-            Notify("Un momento", "Le impostazioni si aprono a dettatura finita.");
+            Notify(T("Un momento", "Just a moment"), T("Le impostazioni si aprono a dettatura finita.", "The settings open once the dictation is over."));
             return;
         }
 
@@ -437,9 +449,16 @@ internal sealed class TrayApp : ApplicationContext
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            Report(new InvalidOperationException($"Impostazioni non salvate su disco: {e.Message}", e));
+            Report(new InvalidOperationException(T($"Impostazioni non salvate su disco: {e.Message}", $"Settings not saved to disk: {e.Message}"), e));
         }
         AppLog.Info($"impostazioni salvate (modalità {updated.Mode}, microfono {MicRecorder.DeviceName(updated.MicrophoneDevice)}, GPU {updated.GpuDevice})");
+
+        // La lingua dell'interfaccia vale per menu e finestre già costruiti: si riavvia l'app.
+        if (Loc.Resolve(old.UiLanguage) != Loc.Resolve(updated.UiLanguage))
+        {
+            Restart();
+            return;
+        }
 
         if (old.MicrophoneDevice != updated.MicrophoneDevice)
         {
@@ -473,10 +492,10 @@ internal sealed class TrayApp : ApplicationContext
         var previous = _transcriber;
         _transcriber = null;
         _tray.Icon = _workingIcon;
-        _overlay?.ShowWorking("Ricarico Whisper con le nuove impostazioni…");
+        _overlay?.ShowWorking(T("Ricarico Whisper con le nuove impostazioni…", "Reloading Whisper with the new settings…"));
         if (previous is not null) await previous.DisposeAsync();
         await LoadTranscriberAsync();
-        if (_transcriber is not null) _overlay?.ShowMessage("Pronta", $"Whisper ricaricato ({WhisperTranscriber.LoadedRuntime}).");
+        if (_transcriber is not null) _overlay?.ShowMessage(T("Pronta", "Ready"), T($"Whisper ricaricato ({WhisperTranscriber.LoadedRuntime}).", $"Whisper reloaded ({WhisperTranscriber.LoadedRuntime})."));
     }
 
     private OverlayForm CreateOverlay()
@@ -504,7 +523,7 @@ internal sealed class TrayApp : ApplicationContext
     {
         if (_lastText is null) return;
         Clipboard.SetText(_lastText);
-        _overlay?.ShowResult("Ultima dettatura copiata", string.Empty, _lastText);
+        _overlay?.ShowResult(T("Ultima dettatura copiata", "Last dictation copied"), string.Empty, _lastText);
     }
 
     /// <summary>Avviso all'utente: nella finestrella se è attiva, altrimenti nel fumetto del tray.</summary>
@@ -517,7 +536,7 @@ internal sealed class TrayApp : ApplicationContext
     private void SetIdle()
     {
         _tray.Icon = _idleIcon;
-        SetStatus(_transcriber is null ? "Whisper non pronto" : "Pronta");
+        SetStatus(_transcriber is null ? T("Whisper non pronto", "Whisper not ready") : T("Pronta", "Ready"));
     }
 
     private void SetStatus(string status)
@@ -530,8 +549,16 @@ internal sealed class TrayApp : ApplicationContext
     private void Report(Exception e)
     {
         AppLog.Write(e);
-        if (_overlay is not null) _overlay.ShowMessage("Errore", e.Message);
+        if (_overlay is not null) _overlay.ShowMessage(T("Errore", "Error"), e.Message);
         else _tray.ShowBalloonTip(5000, Title, e.Message, ToolTipIcon.Error);
+    }
+
+    /// <summary>Avvia una nuova istanza, che aspetta la chiusura di questa prima di partire.</summary>
+    private void Restart()
+    {
+        AppLog.Info("riavvio per la lingua dell'interfaccia");
+        Process.Start(new ProcessStartInfo(Environment.ProcessPath!, Program.RestartArgument) { UseShellExecute = false });
+        ExitThread();
     }
 
     internal static void OpenFile(string path)

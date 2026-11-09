@@ -67,7 +67,7 @@ ciao a tutti, ci vediamo domani
 
 Because the system prompt never changes, one already-started process can serve any prompt, and switching prompt costs no latency. Any tags Claude echoes back are stripped from the answer.
 
-The **Correzione** prompt allows only minimal edits: punctuation and capitalisation; removing hesitations and words repeated by mistake; removing a filler word only when it carries no meaning; keeping only the final version when the speaker corrects themselves ("at three, no, at four"); fixing a mistranscribed word only when the right one is obvious. Same words, same order, same register; when in doubt, the original word stays.
+The **Proofread** prompt (**Correzione** in Italian) allows only minimal edits: punctuation and capitalisation; removing hesitations and words repeated by mistake; removing a filler word only when it carries no meaning; keeping only the final version when the speaker corrects themselves ("at three, no, at four"); fixing a mistranscribed word only when the right one is obvious. Same words, same order, same register; when in doubt, the original word stays.
 
 ### The standby process
 
@@ -96,6 +96,6 @@ The text is pasted through the clipboard:
 
 ![Status window while Claude rewrites](images/overlay-working.png)
 
-The status window is a borderless form with `WS_EX_NOACTIVATE`, `WS_EX_TOPMOST` and `WS_EX_TOOLWINDOW`: it stays on top and receives clicks, but never takes the focus away from the window you are typing in. Results that are not pasted (prompts with **Incolla il risultato** off) stay open until closed; the others close after 10 seconds unless the mouse is over the window. Markdown in the answer is rendered with a small renderer for headings, bold and bullet lists, while **Copia** copies the original text.
+The status window is a borderless form with `WS_EX_NOACTIVATE`, `WS_EX_TOPMOST` and `WS_EX_TOOLWINDOW`: it stays on top and receives clicks, but never takes the focus away from the window you are typing in. Results that are not pasted (prompts with **Paste the result** off) stay open until closed; the others close after 10 seconds unless the mouse is over the window. Markdown in the answer is rendered with a small renderer for headings, bold and bullet lists, while **Copy** copies the original text.
 
 The settings window and the status window share a dark theme drawn by hand (`Theme` and `ModernControls`), with Windows 11 dark title bar and rounded corners through DWM.

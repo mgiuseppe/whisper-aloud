@@ -11,9 +11,9 @@ Voice dictation for Windows in the style of Wispr Flow: hold a shortcut, speak, 
 
 ![Dictating an email with Whisper Aloud](docs/images/usage.gif)
 
-The interface is in Italian and the defaults are tuned for Italian dictation.
+The interface is in English or Italian, following Windows or your choice in the settings.
 
-Whisper's language can be changed in the settings.
+Whisper's spoken language can be changed in the settings.
 
 ## Prerequisites
 
@@ -41,7 +41,7 @@ Rewriting uses customizable [prompts](docs/settings.md#prompts).
 
 ## Settings
 
-Double-click the tray icon, or choose **Impostazioni...** from its menu. Four pages cover dictation mode and shortcuts, microphone and GPU, Claude and its prompts, and what happens after the transcription. Changes apply as soon as you press **Salva** (Save), without restarting the app.
+Double-click the tray icon, or choose **Settings...** from its menu. Four pages cover dictation mode and shortcuts, microphone and GPU, Claude and its prompts, and what happens after the transcription. Changes apply as soon as you press **Save**, without restarting the app.
 
 ![Settings window](docs/images/settings-dictation.png)
 

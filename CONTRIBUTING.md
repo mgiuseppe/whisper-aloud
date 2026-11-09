@@ -43,7 +43,7 @@ The tests cover the parts that do not need a microphone, a GPU or the `claude` C
 ```bash
 dotnet run -c Release --project tools/WhisperAloud.Bench
 dotnet run -c Release --project tools/WhisperAloud.Bench -- --solo-whisper --gpu 1
-dotnet run -c Release --project tools/WhisperAloud.Bench -- haiku --prompt "Minuta"
+dotnet run -c Release --project tools/WhisperAloud.Bench -- haiku --prompt "Minutes"
 ```
 
 The benchmark transcribes the WAV files in `samples` (3 runs each), then rewrites the sentences in `samples/trascrizioni.txt`, first starting a new `claude` process each time and then through the standby process, printing the text before and after so quality can be checked too. Options:
@@ -53,13 +53,13 @@ The benchmark transcribes the WAV files in `samples` (3 runs each), then rewrite
 | first plain argument | Claude model, default `sonnet` |
 | `--gpu N` | Vulkan device index for Whisper; default picks the first dedicated GPU |
 | `--solo-whisper` | measure transcription only, without Claude |
-| `--prompt "Name"` | prompt to use for rewriting, default `Correzione` |
+| `--prompt "Name"` | prompt to use for rewriting, by name; default: the default prompt in your settings |
 
 Update [docs/latency.md](docs/latency.md) when a change affects the numbers.
 
 ## Conventions
 
-- **Language**: the interface, code comments and log messages are in Italian, because the app is built for Italian dictation; documentation is in English.
+- **Language**: every interface string is written in Italian and English where it is used, with `Loc.T("italiano", "English")` from `WhisperAloud.Core`; add both when you add one. Code comments and log messages are in Italian; documentation is in English.
 - **Style**: follow `.editorconfig`; nullable reference types are on and the build should stay free of warnings.
 - **Documentation**: the README is for people who want to understand and use the app; implementation details go in `docs`, contributor information here.
 - **No secrets or personal data in the repository**: never commit `settings.json`, logs, `latency.csv` or models; they live in `%APPDATA%` and `%LOCALAPPDATA%`, outside the repository. The app must never read or store Claude credentials: it only starts the unmodified `claude` CLI.

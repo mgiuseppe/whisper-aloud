@@ -1,3 +1,4 @@
+using WhisperAloud.Core;
 namespace WhisperAloud.App;
 
 /// <summary>Scorciatoia globale nel formato delle impostazioni, es. "Ctrl+Alt+Space".</summary>
@@ -19,7 +20,7 @@ internal sealed record Hotkey(uint Modifiers, Keys Key, string Text)
                 default:
                     if (key is not null || !Enum.TryParse<Keys>(part, ignoreCase: true, out var parsed))
                     {
-                        throw new FormatException($"Scorciatoia non valida: '{text}'.");
+                        throw new FormatException(Loc.T($"Scorciatoia non valida: '{text}'.", $"Invalid shortcut: '{text}'."));
                     }
                     key = parsed;
                     break;
@@ -27,7 +28,7 @@ internal sealed record Hotkey(uint Modifiers, Keys Key, string Text)
         }
 
         return key is null
-            ? throw new FormatException($"Scorciatoia senza tasto principale: '{text}'.")
+            ? throw new FormatException(Loc.T($"Scorciatoia senza tasto principale: '{text}'.", $"Shortcut without a main key: '{text}'."))
             : new Hotkey(modifiers, key.Value, text);
     }
 }
@@ -49,7 +50,8 @@ internal sealed class HotkeyWindow : NativeWindow, IDisposable
         if (!Native.RegisterHotKey(Handle, id, hotkey.Modifiers | Native.MOD_NOREPEAT, (uint)hotkey.Key))
         {
             throw new InvalidOperationException(
-                $"Impossibile registrare {hotkey.Text}: probabilmente è già usata da un'altra applicazione.");
+                Loc.T($"Impossibile registrare {hotkey.Text}: probabilmente è già usata da un'altra applicazione.",
+                    $"Could not register {hotkey.Text}: it is probably used by another application."));
         }
         _handlers[id] = handler;
     }

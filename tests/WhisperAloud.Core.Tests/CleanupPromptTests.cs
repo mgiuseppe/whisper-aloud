@@ -59,7 +59,7 @@ public class CleanupPromptTests
     [Fact]
     public void FindPrompt_FallsBackToSelectedThenFirst()
     {
-        var options = new ClaudeOptions { SelectedPrompt = "Minuta" };
+        var options = new ClaudeOptions { Prompts = ClaudeOptions.DefaultPrompts(english: false), SelectedPrompt = "Minuta" };
 
         Assert.Equal("Pirata ubriaco", options.FindPrompt("pirata ubriaco").Name);
         Assert.Equal("Minuta", options.FindPrompt("non esiste").Name);
@@ -70,9 +70,20 @@ public class CleanupPromptTests
     [Fact]
     public void DefaultPrompts_MinuteIsShownNotPasted()
     {
-        var minute = new ClaudeOptions().FindPrompt("Minuta");
+        var options = new ClaudeOptions { Prompts = ClaudeOptions.DefaultPrompts(english: false) };
 
-        Assert.False(minute.Paste);
-        Assert.True(new ClaudeOptions().FindPrompt("Correzione").Paste);
+        Assert.False(options.FindPrompt("Minuta").Paste);
+        Assert.True(options.FindPrompt("Correzione").Paste);
+    }
+
+    [Fact]
+    public void DefaultPrompts_SameShapeInBothLanguages()
+    {
+        var italian = ClaudeOptions.DefaultPrompts(english: false);
+        var english = ClaudeOptions.DefaultPrompts(english: true);
+
+        Assert.Equal(italian.Select(p => p.Paste), english.Select(p => p.Paste));
+        Assert.Equal("Minutes", english[1].Name);
+        Assert.Equal(CleanupPrompt.CorrectionEnglish, english[0].Instructions);
     }
 }

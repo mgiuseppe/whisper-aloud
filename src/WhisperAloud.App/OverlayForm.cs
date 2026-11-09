@@ -1,4 +1,5 @@
-﻿using System.ComponentModel;
+﻿using WhisperAloud.Core;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
@@ -30,8 +31,8 @@ internal sealed partial class OverlayForm : Form
     private string _rawText = string.Empty;
     private Point? _dragOffset;
     private bool _dragged;
-    private readonly ModernButton _copy = new("Copia", primary: true);
-    private readonly ModernButton _close = new("Chiudi");
+    private readonly ModernButton _copy = new(Loc.T("Copia", "Copy"), primary: true);
+    private readonly ModernButton _close = new(Loc.T("Chiudi", "Close"));
     private readonly System.Windows.Forms.Timer _tick = new() { Interval = 50 };
     private readonly System.Windows.Forms.Timer _autoHide = new();
     private readonly Stopwatch _elapsed = new();
@@ -149,7 +150,7 @@ internal sealed partial class OverlayForm : Form
     public void ShowResult(string title, string detail, string text, bool sticky = false)
     {
         var plain = SetText(text);
-        _copy.Text = "Copia";
+        _copy.Text = Loc.T("Copia", "Copy");
         // La casella cresce con il testo (una minuta è più lunga di una frase), fino a un massimo.
         var measured = TextRenderer.MeasureText(plain, _textFont, new Size(_textFrame.Width - S(34), int.MaxValue),
             TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl).Height;
@@ -235,7 +236,7 @@ internal sealed partial class OverlayForm : Form
                 // Radice quadrata: la voce normale (RMS 0,01-0,1) riempie metà o più dell'altezza.
                 _wave.Push(Math.Clamp(MathF.Sqrt(level / 0.15f), 0, 1));
                 var silent = _elapsed.ElapsedMilliseconds > SilenceWarningMs && _maxLevel < WhisperTranscriber.SilenceRms;
-                _title.Text = silent ? "Nessun suono dal microfono" : _recordingTitle;
+                _title.Text = silent ? Loc.T("Nessun suono dal microfono", "No sound from the microphone") : _recordingTitle;
                 _title.ForeColor = silent ? Orange : Fore;
                 break;
             case Mode.Working:
@@ -336,11 +337,11 @@ internal sealed partial class OverlayForm : Form
         try
         {
             Clipboard.SetText(_rawText); // si copia il markdown originale, non la versione formattata
-            _copy.Text = "Copiato";
+            _copy.Text = Loc.T("Copiato", "Copied");
         }
         catch (ExternalException)
         {
-            _copy.Text = "Riprova";
+            _copy.Text = Loc.T("Riprova", "Try again");
         }
     }
 
@@ -403,7 +404,7 @@ internal sealed partial class OverlayForm : Form
         private void Select(string? name)
         {
             _selected = name;
-            Text = name is null ? "Solo trascrizione" : $"Claude · {name}";
+            Text = name is null ? Loc.T("Solo trascrizione", "Transcription only") : $"Claude · {name}";
             Width = TextRenderer.MeasureText(Text, Font).Width + S(48);
             Invalidate();
         }
@@ -412,7 +413,7 @@ internal sealed partial class OverlayForm : Form
         {
             base.OnClick(e);
             _menu.Items.Clear();
-            AddItem("Solo trascrizione", null);
+            AddItem(Loc.T("Solo trascrizione", "Transcription only"), null);
             _menu.Items.Add(new ToolStripSeparator());
             foreach (var prompt in _prompts) AddItem(prompt, prompt);
             _menu.Show(this, new Point(0, Height + S(4)));

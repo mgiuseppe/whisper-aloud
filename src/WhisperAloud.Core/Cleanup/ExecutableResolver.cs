@@ -9,7 +9,7 @@ public static class ExecutableResolver
         {
             return File.Exists(executable)
                 ? executable
-                : throw new FileNotFoundException($"CLI claude non trovata in {executable}.", executable);
+                : throw new FileNotFoundException(Loc.T($"CLI claude non trovata in {executable}.", $"claude CLI not found at {executable}."), executable);
         }
 
         var extensions = (Environment.GetEnvironmentVariable("PATHEXT") ?? ".EXE;.CMD;.BAT")
@@ -30,6 +30,7 @@ public static class ExecutableResolver
         }
 
         throw new FileNotFoundException(
-            $"CLI '{executable}' non trovata nel PATH. Installa Claude Code o indica il percorso in Claude.Executable nelle impostazioni.");
+            Loc.T($"CLI '{executable}' non trovata nel PATH. Installa Claude Code o indica il percorso in Claude.Executable nelle impostazioni.",
+                $"CLI '{executable}' not found on the PATH. Install Claude Code or set its path in the settings."));
     }
 }

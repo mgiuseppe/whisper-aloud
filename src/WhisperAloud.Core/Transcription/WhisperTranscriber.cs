@@ -33,7 +33,7 @@ public sealed class WhisperTranscriber : IAsyncDisposable
     {
         if (!File.Exists(modelPath))
         {
-            progress?.Report("Download del modello Whisper large-v3-turbo (~550 MB)...");
+            progress?.Report(Loc.T("Download del modello Whisper large-v3-turbo (~550 MB)...", "Downloading the Whisper large-v3-turbo model (~550 MB)..."));
             await DownloadModelAsync(modelPath, cancellationToken).ConfigureAwait(false);
         }
 
@@ -42,7 +42,7 @@ public sealed class WhisperTranscriber : IAsyncDisposable
         var loading = true;
         if (log is not null) LogProvider.AddLogger((_, message) => { if (loading && message is not null && IsDeviceLine(message)) log(message.Trim()); });
 
-        progress?.Report("Caricamento del modello Whisper...");
+        progress?.Report(Loc.T("Caricamento del modello Whisper...", "Loading the Whisper model..."));
         // Con -1 si sceglie la prima GPU dedicata: whisper.cpp userebbe la GPU 0, sui portatili spesso l'integrata.
         if (gpuDevice < 0 && VulkanDevices.FindDiscreteGpu() is { } discrete)
         {

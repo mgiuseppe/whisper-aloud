@@ -1,6 +1,7 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using static WhisperAloud.Core.Loc;
 
 namespace WhisperAloud.Core;
 
@@ -19,13 +20,18 @@ public sealed class WhisperAloudSettings
     /// <summary>Ripulisce con Claude il testo selezionato nella finestra attiva e lo sostituisce.</summary>
     public string HotkeyCleanSelection { get; set; } = "Ctrl+Alt+R";
 
-    public string Language { get; set; } = "it";
+    /// <summary>Lingua dell'interfaccia: "auto" segue Windows (italiano se è italiano, altrimenti inglese), "it" o "en".</summary>
+    public string UiLanguage { get; set; } = "auto";
+
+    /// <summary>Lingua parlata, per Whisper; "auto" la riconosce da sola.</summary>
+    public string Language { get; set; } = T("it", "en");
 
     /// <summary>File del modello ggml; se è un nome semplice viene cercato in %LOCALAPPDATA%\WhisperAloud\models.</summary>
     public string WhisperModel { get; set; } = "ggml-large-v3-turbo-q5_0.bin";
 
     /// <summary>Contesto per Whisper: aiuta punteggiatura e parole ricorrenti (nomi, termini tecnici).</summary>
-    public string WhisperPrompt { get; set; } = "Trascrizione di un messaggio dettato in italiano, con punteggiatura.";
+    public string WhisperPrompt { get; set; } = T("Trascrizione di un messaggio dettato in italiano, con punteggiatura.",
+        "Transcription of a dictated message, with punctuation.");
 
     /// <summary>GPU Vulkan per Whisper (indice come lo elenca Vulkan); -1 sceglie da sola la prima GPU dedicata.</summary>
     public int GpuDevice { get; set; } = -1;
@@ -119,7 +125,7 @@ public sealed class ClaudeOptions
     public List<PromptPreset> Prompts { get; set; } = DefaultPrompts();
 
     /// <summary>Nome del prompt predefinito, usato da "detta e riscrivi" e da "riscrivi la selezione".</summary>
-    public string SelectedPrompt { get; set; } = "Correzione";
+    public string SelectedPrompt { get; set; } = DefaultPrompts()[0].Name;
 
     /// <summary>
     /// Prompt di sistema alternativo (solo da file, per esperti); vuoto usa <see cref="Cleanup.CleanupPrompt.System"/>.
@@ -132,21 +138,38 @@ public sealed class ClaudeOptions
         Prompts.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))
         ?? Prompts.FirstOrDefault(p => string.Equals(p.Name, SelectedPrompt, StringComparison.OrdinalIgnoreCase))
         ?? Prompts.FirstOrDefault()
-        ?? new PromptPreset { Name = "Correzione", Instructions = Cleanup.CleanupPrompt.Correction };
+        ?? DefaultPrompts()[0];
 
-    public static List<PromptPreset> DefaultPrompts() =>
-    [
-        new() { Name = "Correzione", Instructions = Cleanup.CleanupPrompt.Correction },
-        new()
-        {
-            Name = "Minuta",
-            Instructions = "Fai una minuta della registrazione, predisponi un riassunto breve, una lista di argomenti, una o più cta. " +
-                           "Devi essere super conciso e non fare domande all'utente perché il risultato verrà mostrato in una casella di sola lettura.",
-            Paste = false,
-        },
-        new() { Name = "Traduzione in inglese", Instructions = "Traduci in inglese la registrazione." },
-        new() { Name = "Pirata ubriaco", Instructions = "Riscrivi la registrazione come la direbbe un pirata ubriaco." },
-    ];
+    /// <summary>Prompt di partenza, nella lingua dell'interfaccia al primo avvio; poi sono dell'utente e non si traducono.</summary>
+    public static List<PromptPreset> DefaultPrompts() => DefaultPrompts(Loc.English);
+
+    public static List<PromptPreset> DefaultPrompts(bool english) => english
+        ?
+        [
+            new() { Name = "Proofread", Instructions = Cleanup.CleanupPrompt.CorrectionEnglish },
+            new()
+            {
+                Name = "Minutes",
+                Instructions = "Write minutes of the recording: a short summary, a list of topics, one or more calls to action. " +
+                               "Be extremely concise and do not ask the user questions, because the result is shown in a read-only box.",
+                Paste = false,
+            },
+            new() { Name = "Translate into Italian", Instructions = "Translate the recording into Italian." },
+            new() { Name = "Drunk pirate", Instructions = "Rewrite the recording the way a drunk pirate would say it." },
+        ]
+        :
+        [
+            new() { Name = "Correzione", Instructions = Cleanup.CleanupPrompt.Correction },
+            new()
+            {
+                Name = "Minuta",
+                Instructions = "Fai una minuta della registrazione, predisponi un riassunto breve, una lista di argomenti, una o più cta. " +
+                               "Devi essere super conciso e non fare domande all'utente perché il risultato verrà mostrato in una casella di sola lettura.",
+                Paste = false,
+            },
+            new() { Name = "Traduzione in inglese", Instructions = "Traduci in inglese la registrazione." },
+            new() { Name = "Pirata ubriaco", Instructions = "Riscrivi la registrazione come la direbbe un pirata ubriaco." },
+        ];
 }
 
 /// <summary>Un prompt per claude: cosa fare del testo dettato.</summary>

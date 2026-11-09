@@ -1,6 +1,7 @@
 ﻿using WhisperAloud.Core;
 using WhisperAloud.Core.Transcription;
 using static WhisperAloud.App.Theme;
+using static WhisperAloud.Core.Loc;
 
 namespace WhisperAloud.App;
 
@@ -12,12 +13,15 @@ internal sealed class SettingsForm : Form
 {
     private readonly WhisperAloudSettings _settings;
 
-    private readonly OptionCard _pushToTalk = new("Tieni premuto", "Registra finché tieni premuta la scorciatoia. Ideale per frasi brevi.");
-    private readonly OptionCard _toggle = new("Avvio e stop", "Premi una volta per iniziare e una per finire. Comodo per dettature lunghe.");
+    private readonly OptionCard _pushToTalk = new(T("Tieni premuto", "Hold"),
+        T("Registra finché tieni premuta la scorciatoia. Ideale per frasi brevi.", "Records while you hold the shortcut. Best for short sentences."));
+    private readonly OptionCard _toggle = new(T("Avvio e stop", "Start and stop"),
+        T("Premi una volta per iniziare e una per finire. Comodo per dettature lunghe.", "Press once to start and again to stop. Handy for long dictations."));
     private readonly KeyCapBox _hotkeyDictate = new();
     private readonly KeyCapBox _hotkeyClaude = new();
     private readonly KeyCapBox _hotkeySelection = new();
     private readonly NumericUpDown _minRecording = Number(0, 5000, 50);
+    private readonly DarkComboBox _uiLanguage = Combo(220);
 
     private readonly DarkComboBox _microphone = Combo(300);
     private readonly DarkComboBox _gpu = Combo(300);
@@ -30,7 +34,7 @@ internal sealed class SettingsForm : Form
     private readonly NumericUpDown _timeout = Number(5, 300, 5);
     private readonly TextBox _claudeExecutable = new();
     private readonly DarkComboBox _defaultPrompt = Combo(260);
-    private readonly ModernButton _addPrompt = new("+ Aggiungi prompt");
+    private readonly ModernButton _addPrompt = new(T("+ Aggiungi prompt", "+ Add prompt"));
     private readonly List<PromptEditor> _promptEditors = [];
     private Page? _claudePage;
 
@@ -49,7 +53,7 @@ internal sealed class SettingsForm : Form
     {
         _settings = current.Clone();
 
-        Text = "Whisper Aloud · Impostazioni";
+        Text = T("Whisper Aloud · Impostazioni", "Whisper Aloud · Settings");
         AutoScaleMode = AutoScaleMode.None;
         Font = Body(10f);
         BackColor = Window;
@@ -70,10 +74,10 @@ internal sealed class SettingsForm : Form
         _toggle.Selected += (_, _) => SelectMode(DictationMode.Toggle);
 
         var pageHost = new Panel { Dock = DockStyle.Fill, BackColor = Window };
-        AddPage(pageHost, "Dettatura", "Come detti e le scorciatoie da tastiera.", BuildDictationPage());
-        AddPage(pageHost, "Trascrizione", "Microfono e Whisper, il modello che trascrive in locale sulla GPU.", BuildTranscriptionPage());
-        AddPage(pageHost, "Claude", "Riscrittura leggera, solo quando la chiedi: non cambia il senso e non aggiunge nulla.", BuildClaudePage());
-        AddPage(pageHost, "Incolla", "Cosa succede dopo la trascrizione.", BuildPastePage());
+        AddPage(pageHost, T("Dettatura", "Dictation"), T("Come detti, le scorciatoie da tastiera e la lingua dell'app.", "How you dictate, the keyboard shortcuts and the app language."), BuildDictationPage());
+        AddPage(pageHost, T("Trascrizione", "Transcription"), T("Microfono e Whisper, il modello che trascrive in locale sulla GPU.", "Microphone and Whisper, the model that transcribes locally on the GPU."), BuildTranscriptionPage());
+        AddPage(pageHost, "Claude", T("Riscrittura con i tuoi prompt, solo quando la chiedi.", "Rewriting with your prompts, only when you ask for it."), BuildClaudePage());
+        AddPage(pageHost, T("Incolla", "Paste"), T("Cosa succede dopo la trascrizione.", "What happens after the transcription."), BuildPastePage());
 
         var content = new Panel { Dock = DockStyle.Fill, BackColor = Window };
         content.Controls.Add(pageHost);
@@ -117,46 +121,56 @@ internal sealed class SettingsForm : Form
         };
 
         return new Page(
-            new SettingsCard(new SettingRow("Modalità", null, modes, below: true)),
-            Section("Scorciatoie"),
+            new SettingsCard(new SettingRow(T("Modalità", "Mode"), null, modes, below: true)),
+            Section(T("Scorciatoie", "Shortcuts")),
             new SettingsCard(
-                new SettingRow("Detta e incolla", "La trascrizione di Whisper così com'è.", _hotkeyDictate),
-                new SettingRow("Detta e riscrivi con Claude", "Whisper, poi una correzione leggera di Claude.", _hotkeyClaude),
-                new SettingRow("Riscrivi la selezione", "Sistema con Claude il testo selezionato nella finestra attiva.", _hotkeySelection),
-                new SettingRow("Come cambiarle", "Clicca su una scorciatoia e premi la nuova combinazione; Esc annulla. Mentre scegli, le scorciatoie sono sospese.", null)),
-            Section("Avanzate"),
+                new SettingRow(T("Detta e incolla", "Dictate and paste"), T("La trascrizione di Whisper così com'è.", "Whisper's transcription as it is."), _hotkeyDictate),
+                new SettingRow(T("Detta e riscrivi con Claude", "Dictate and rewrite with Claude"), T("Whisper, poi Claude con il prompt predefinito.", "Whisper, then Claude with the default prompt."), _hotkeyClaude),
+                new SettingRow(T("Riscrivi la selezione", "Rewrite the selection"), T("Sistema con Claude il testo selezionato nella finestra attiva.", "Rewrites the text selected in the active window with Claude."), _hotkeySelection),
+                new SettingRow(T("Come cambiarle", "How to change them"),
+                    T("Clicca su una scorciatoia e premi la nuova combinazione; Esc annulla. Mentre scegli, le scorciatoie sono sospese.",
+                      "Click a shortcut and press the new combination; Esc cancels. While you choose, the shortcuts are suspended."), null)),
+            Section(T("Lingua", "Language")),
             new SettingsCard(
-                new SettingRow("Pressione minima (ms)", "Solo con Tieni premuto: le pressioni più brevi sono considerate accidentali.",
+                new SettingRow(T("Lingua dell'app", "App language"),
+                    T("Menu, finestre e prompt di esempio. Cambiandola l'app si riavvia; i tuoi prompt restano come sono.",
+                      "Menus, windows and sample prompts. Changing it restarts the app; your prompts stay as they are."), _uiLanguage)),
+            Section(T("Avanzate", "Advanced")),
+            new SettingsCard(
+                new SettingRow(T("Pressione minima (ms)", "Minimum press (ms)"),
+                    T("Solo con Tieni premuto: le pressioni più brevi sono considerate accidentali.", "Hold mode only: shorter presses are treated as accidental."),
                     Frame(_minRecording, S(110), S(34)))));
     }
 
     private Page BuildTranscriptionPage() => new(
         new SettingsCard(
-            new SettingRow("Microfono", null, _microphone),
-            new SettingRow("GPU", "Sui portatili con due GPU serve la dedicata: con l'integrata la trascrizione è circa 20 volte più lenta.", _gpu)),
+            new SettingRow(T("Microfono", "Microphone"), null, _microphone),
+            new SettingRow("GPU", T("Sui portatili con due GPU serve la dedicata: con l'integrata la trascrizione è circa 20 volte più lenta.",
+                "On laptops with two GPUs use the dedicated one: with the integrated one transcription is about 20 times slower."), _gpu)),
         Section("Whisper"),
         new SettingsCard(
-            new SettingRow("Lingua", "Lingua parlata; auto la riconosce da sola ma sbaglia più spesso.", _language),
-            new SettingRow("Modello", $"Nome del file in {AppPaths.ModelsDir} oppure percorso completo.", Frame(_whisperModel, 0, S(36)), below: true),
-            new SettingRow("Contesto", "Aiuta punteggiatura, nomi e termini tecnici ricorrenti.", Frame(_whisperPrompt, 0, S(82), resizable: true), below: true)));
+            new SettingRow(T("Lingua", "Language"), T("Lingua parlata; auto la riconosce da sola ma sbaglia più spesso.", "Spoken language; auto detects it but makes more mistakes."), _language),
+            new SettingRow(T("Modello", "Model"), T($"Nome del file in {AppPaths.ModelsDir} oppure percorso completo.", $"File name in {AppPaths.ModelsDir} or a full path."), Frame(_whisperModel, 0, S(36)), below: true),
+            new SettingRow(T("Contesto", "Context"), T("Aiuta punteggiatura, nomi e termini tecnici ricorrenti.", "Helps with punctuation, names and recurring technical terms."), Frame(_whisperPrompt, 0, S(82), resizable: true), below: true)));
 
     private Page BuildClaudePage()
     {
-        _addPrompt.Click += (_, _) => AddPromptEditor(new PromptPreset { Name = "Nuovo prompt" }, focus: true);
+        _addPrompt.Click += (_, _) => AddPromptEditor(new PromptPreset { Name = T("Nuovo prompt", "New prompt") }, focus: true);
         _claudePage = new Page(
             new SettingsCard(
-                new SettingRow("Modello", "sonnet è il più fedele al testo dettato; haiku è più veloce ma a volte riformula.", _claudeModel),
-                new SettingRow("Processo pronto", "Tiene avviato un processo claude: la riscrittura risponde in circa 2 secondi invece di 4-5.", _warmProcess),
-                new SettingRow("Timeout (secondi)", "Attesa massima della risposta, poi incolla la trascrizione grezza.", Frame(_timeout, S(110), S(34)))),
-            Section("Avanzate"),
+                new SettingRow(T("Modello", "Model"), T("sonnet è il più fedele al testo dettato; haiku è più veloce ma a volte riformula.", "sonnet is the most faithful to the dictated text; haiku is faster but sometimes rephrases."), _claudeModel),
+                new SettingRow(T("Processo pronto", "Process ready"), T("Tiene avviato un processo claude: la riscrittura risponde in circa 2 secondi invece di 4-5.", "Keeps a claude process running: a rewrite takes about 2 seconds instead of 4-5."), _warmProcess),
+                new SettingRow(T("Timeout (secondi)", "Timeout (seconds)"), T("Attesa massima della risposta, poi incolla la trascrizione grezza.", "Maximum wait for the answer, then the raw transcription is pasted."), Frame(_timeout, S(110), S(34)))),
+            Section(T("Avanzate", "Advanced")),
             new SettingsCard(
-                new SettingRow("Eseguibile", "\"claude\" la cerca nel PATH e in %USERPROFILE%\\.local\\bin.", Frame(_claudeExecutable, 0, S(36)), below: true)),
+                new SettingRow(T("Eseguibile", "Executable"), T("\"claude\" la cerca nel PATH e in %USERPROFILE%\\.local\\bin.", "\"claude\" is looked up on the PATH and in %USERPROFILE%\\.local\\bin."), Frame(_claudeExecutable, 0, S(36)), below: true)),
             Section("Prompt"),
             new SettingsCard(
-                new SettingRow("Prompt predefinito",
-                    "Usato da Detta e riscrivi e da Riscrivi la selezione. Mentre registri puoi sceglierne un altro dalla finestrella.",
+                new SettingRow(T("Prompt predefinito", "Default prompt"),
+                    T("Usato da Detta e riscrivi e da Riscrivi la selezione. Mentre registri puoi sceglierne un altro dalla finestrella.",
+                      "Used by Dictate and rewrite and by Rewrite the selection. While recording you can pick another one in the status window."),
                     _defaultPrompt)),
-            Section("I tuoi prompt"),
+            Section(T("I tuoi prompt", "Your prompts")),
             // Le schede dei prompt vengono inserite qui, prima del pulsante (vedi AddPromptEditor).
             _addPrompt);
         return _claudePage;
@@ -180,7 +194,7 @@ internal sealed class SettingsForm : Form
     {
         if (_promptEditors.Count == 1)
         {
-            ShowError("Serve almeno un prompt.", 2);
+            ShowError(T("Serve almeno un prompt.", "At least one prompt is needed."), 2);
             return;
         }
         _promptEditors.Remove(editor);
@@ -201,9 +215,9 @@ internal sealed class SettingsForm : Form
 
     private Page BuildPastePage() => new(
         new SettingsCard(
-            new SettingRow("Spazio dopo il testo", "Le dettature consecutive non si attaccano.", _appendSpace),
-            new SettingRow("Ripristina gli appunti", "Dopo l'incolla gli appunti tornano com'erano.", _restoreClipboard),
-            new SettingRow("Finestrella di stato", "In primo piano mentre ascolta, trascrive e incolla, con il pulsante Copia.", _showOverlay)));
+            new SettingRow(T("Spazio dopo il testo", "Space after the text"), T("Le dettature consecutive non si attaccano.", "Consecutive dictations do not stick together."), _appendSpace),
+            new SettingRow(T("Ripristina gli appunti", "Restore the clipboard"), T("Dopo l'incolla gli appunti tornano com'erano.", "After pasting, the clipboard goes back to what it was."), _restoreClipboard),
+            new SettingRow(T("Finestrella di stato", "Status window"), T("In primo piano mentre ascolta, trascrive e incolla, con il pulsante Copia.", "Always on top while listening, transcribing and pasting, with a Copy button."), _showOverlay)));
 
     // --- struttura della finestra ---
 
@@ -212,7 +226,7 @@ internal sealed class SettingsForm : Form
         var sidebar = new Panel { Dock = DockStyle.Left, Width = S(220), BackColor = Sidebar };
         var logo = new MicBadge { Location = new Point(S(20), S(24)) };
         var title = new Label { Text = "Whisper Aloud", Font = Display(14f), ForeColor = Fore, AutoSize = true, BackColor = Sidebar, Location = new Point(S(64), S(22)) };
-        var subtitle = new Label { Text = "Impostazioni", Font = Body(9f), ForeColor = Muted, AutoSize = true, BackColor = Sidebar, Location = new Point(S(65), S(48)) };
+        var subtitle = new Label { Text = T("Impostazioni", "Settings"), Font = Body(9f), ForeColor = Muted, AutoSize = true, BackColor = Sidebar, Location = new Point(S(65), S(48)) };
         sidebar.Controls.AddRange([logo, title, subtitle]);
 
         for (var i = 0; i < _pages.Count; i++)
@@ -246,7 +260,7 @@ internal sealed class SettingsForm : Form
         var footer = new Panel { Dock = DockStyle.Bottom, Height = S(68), BackColor = Window };
         var link = new LinkLabel
         {
-            Text = "Apri settings.json",
+            Text = T("Apri settings.json", "Open settings.json"),
             AutoSize = true,
             Font = Body(9.5f),
             LinkColor = Accent,
@@ -256,11 +270,11 @@ internal sealed class SettingsForm : Form
             BackColor = Window,
         };
         link.LinkClicked += (_, _) => TrayApp.OpenFile(AppPaths.SettingsFile);
-        new ToolTip().SetToolTip(link, $"{AppPaths.SettingsFile}\nLe modifiche fatte a mano nel file valgono al riavvio dell'app.");
+        new ToolTip().SetToolTip(link, T($"{AppPaths.SettingsFile}\nLe modifiche fatte a mano nel file valgono al riavvio dell'app.", $"{AppPaths.SettingsFile}\nManual edits to the file apply when the app restarts."));
 
-        var save = new ModernButton("Salva", primary: true);
+        var save = new ModernButton(T("Salva", "Save"), primary: true);
         save.Click += (_, _) => Save();
-        var cancel = new ModernButton("Annulla") { DialogResult = DialogResult.Cancel };
+        var cancel = new ModernButton(T("Annulla", "Cancel")) { DialogResult = DialogResult.Cancel };
         AcceptButton = save;
         CancelButton = cancel;
 
@@ -314,17 +328,21 @@ internal sealed class SettingsForm : Form
         _hotkeyClaude.Text = _settings.HotkeyDictateWithClaude;
         _hotkeySelection.Text = _settings.HotkeyCleanSelection;
         _minRecording.Value = Math.Clamp(_settings.MinRecordingMs, (int)_minRecording.Minimum, (int)_minRecording.Maximum);
+        _uiLanguage.Items.AddRange([new TextChoice("auto", T("Automatica (Windows)", "Automatic (Windows)")),
+            new TextChoice("it", "Italiano"), new TextChoice("en", "English")]);
+        _uiLanguage.SelectedItem = _uiLanguage.Items.Cast<TextChoice>().FirstOrDefault(c => c.Value == _settings.UiLanguage) ?? _uiLanguage.Items[0];
 
-        _microphone.Items.Add(new Choice(-1, "Predefinito di Windows"));
+        _microphone.Items.Add(new Choice(-1, T("Predefinito di Windows", "Windows default")));
         foreach (var (index, name) in MicRecorder.ListDevices()) _microphone.Items.Add(new Choice(index, name));
         Select(_microphone, _settings.MicrophoneDevice);
 
         var gpus = VulkanDevices.List();
         var discrete = gpus.FirstOrDefault(g => g.Discrete);
-        _gpu.Items.Add(new Choice(-1, discrete.Name is null ? "Automatica" : $"Automatica · {discrete.Name}"));
+        var automatic = T("Automatica", "Automatic");
+        _gpu.Items.Add(new Choice(-1, discrete.Name is null ? automatic : $"{automatic} · {discrete.Name}"));
         foreach (var (index, name, isDiscrete) in gpus)
         {
-            _gpu.Items.Add(new Choice(index, $"{name} ({(isDiscrete ? "dedicata" : "integrata")})"));
+            _gpu.Items.Add(new Choice(index, $"{name} ({(isDiscrete ? T("dedicata", "dedicated") : T("integrata", "integrated"))})"));
         }
         Select(_gpu, _settings.GpuDevice);
 
@@ -359,28 +377,28 @@ internal sealed class SettingsForm : Form
         }
         if (hotkeys.Distinct(StringComparer.OrdinalIgnoreCase).Count() < hotkeys.Length)
         {
-            ShowError("Le tre scorciatoie devono essere diverse.", 0);
+            ShowError(T("Le tre scorciatoie devono essere diverse.", "The three shortcuts must be different."), 0);
             return;
         }
         if (string.IsNullOrWhiteSpace(_language.Text) || string.IsNullOrWhiteSpace(_whisperModel.Text))
         {
-            ShowError("Lingua e modello di Whisper non possono essere vuoti.", 1);
+            ShowError(T("Lingua e modello di Whisper non possono essere vuoti.", "Whisper's language and model cannot be empty."), 1);
             return;
         }
         if (string.IsNullOrWhiteSpace(_claudeModel.Text) || string.IsNullOrWhiteSpace(_claudeExecutable.Text))
         {
-            ShowError("Modello ed eseguibile di Claude non possono essere vuoti.", 2);
+            ShowError(T("Modello ed eseguibile di Claude non possono essere vuoti.", "Claude's model and executable cannot be empty."), 2);
             return;
         }
         var names = _promptEditors.Select(e => e.NameBox.Text.Trim()).ToList();
         if (names.Any(string.IsNullOrEmpty) || _promptEditors.Any(e => string.IsNullOrWhiteSpace(e.InstructionsBox.Text)))
         {
-            ShowError("Ogni prompt deve avere un nome e delle istruzioni.", 2);
+            ShowError(T("Ogni prompt deve avere un nome e delle istruzioni.", "Every prompt needs a name and instructions."), 2);
             return;
         }
         if (names.Distinct(StringComparer.OrdinalIgnoreCase).Count() < names.Count)
         {
-            ShowError("Due prompt hanno lo stesso nome.", 2);
+            ShowError(T("Due prompt hanno lo stesso nome.", "Two prompts have the same name."), 2);
             return;
         }
 
@@ -389,6 +407,7 @@ internal sealed class SettingsForm : Form
         _settings.HotkeyDictateWithClaude = _hotkeyClaude.Text;
         _settings.HotkeyCleanSelection = _hotkeySelection.Text;
         _settings.MinRecordingMs = (int)_minRecording.Value;
+        _settings.UiLanguage = ((TextChoice)_uiLanguage.SelectedItem!).Value;
 
         _settings.MicrophoneDevice = ((Choice)_microphone.SelectedItem!).Value;
         _settings.GpuDevice = ((Choice)_gpu.SelectedItem!).Value;
@@ -424,13 +443,18 @@ internal sealed class SettingsForm : Form
         if (item is null)
         {
             // Valore non più presente (microfono scollegato, GPU cambiata): lo si mostra comunque per non perderlo.
-            item = new Choice(value, $"{value} · non trovato");
+            item = new Choice(value, $"{value} · {T("non trovato", "not found")}");
             combo.Items.Add(item);
         }
         combo.SelectedItem = item;
     }
 
     private sealed record Choice(int Value, string Text)
+    {
+        public override string ToString() => Text;
+    }
+
+    private sealed record TextChoice(string Value, string Text)
     {
         public override string ToString() => Text;
     }
@@ -485,7 +509,7 @@ internal sealed class SettingsForm : Form
             PasteSwitch.Checked = preset.Paste;
             NameBox.TextChanged += (_, _) => renamed();
 
-            var delete = new ModernButton("Elimina");
+            var delete = new ModernButton(T("Elimina", "Delete"));
             delete.Click += (_, _) => remove(this);
             var nameFrame = Frame(NameBox, S(260), S(36));
             var nameRow = new Panel { BackColor = Surface, Size = new Size(nameFrame.Width + S(10) + delete.Width, S(36)) };
@@ -494,10 +518,13 @@ internal sealed class SettingsForm : Form
             nameRow.Controls.AddRange([nameFrame, delete]);
 
             Card = new SettingsCard(
-                new SettingRow("Nome", null, nameRow),
-                new SettingRow("Istruzioni", "Cosa deve fare Claude con il testo dettato. Trascina la maniglia in basso per ingrandire il riquadro.",
+                new SettingRow(T("Nome", "Name"), null, nameRow),
+                new SettingRow(T("Istruzioni", "Instructions"),
+                    T("Cosa deve fare Claude con il testo dettato. Trascina la maniglia in basso per ingrandire il riquadro.",
+                      "What Claude should do with the dictated text. Drag the handle at the bottom to enlarge the box."),
                     Frame(InstructionsBox, 0, S(104), resizable: true), below: true),
-                new SettingRow("Incolla il risultato", "Spento: il risultato resta nella finestrella, da copiare. Utile per minute e riassunti.", PasteSwitch));
+                new SettingRow(T("Incolla il risultato", "Paste the result"),
+                    T("Spento: il risultato resta nella finestrella, da copiare. Utile per minute e riassunti.", "Off: the result stays in the status window, ready to copy. Useful for minutes and summaries."), PasteSwitch));
         }
 
         public TextBox NameBox { get; } = new();
@@ -515,7 +542,7 @@ internal sealed class SettingsForm : Form
             Paste = PasteSwitch.Checked,
         };
 
-        public override string ToString() => string.IsNullOrWhiteSpace(NameBox.Text) ? "(senza nome)" : NameBox.Text.Trim();
+        public override string ToString() => string.IsNullOrWhiteSpace(NameBox.Text) ? T("(senza nome)", "(unnamed)") : NameBox.Text.Trim();
     }
 
     /// <summary>Pagina scorrevole: impila schede e titoletti di sezione a tutta larghezza.</summary>

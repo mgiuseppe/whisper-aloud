@@ -1,3 +1,4 @@
+using WhisperAloud.Core;
 using WhisperAloud.Core.Transcription;
 using NAudio.Wave;
 
@@ -35,7 +36,7 @@ internal sealed class MicRecorder : IDisposable
     public static string DeviceName(int deviceNumber) =>
         deviceNumber >= 0 && deviceNumber < WaveInEvent.DeviceCount
             ? WaveInEvent.GetCapabilities(deviceNumber).ProductName
-            : "predefinito di Windows";
+            : Loc.T("predefinito di Windows", "Windows default");
 
     public void Start()
     {

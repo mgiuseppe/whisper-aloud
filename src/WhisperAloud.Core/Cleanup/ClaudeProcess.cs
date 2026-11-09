@@ -53,7 +53,7 @@ internal sealed class ClaudeProcess
         var claude = new ClaudeProcess(process);
         process.ErrorDataReceived += (_, e) => claude.AppendStderr(e.Data);
 
-        if (!process.Start()) throw new InvalidOperationException($"Impossibile avviare {executable}.");
+        if (!process.Start()) throw new InvalidOperationException(Loc.T($"Impossibile avviare {executable}.", $"Could not start {executable}."));
         process.BeginErrorReadLine();
         _ = claude.PumpStdoutAsync();
         return claude;
@@ -72,13 +72,15 @@ internal sealed class ClaudeProcess
                 case AssistantText assistant:
                     return assistant.Text;
                 case TurnResult { IsError: true } error:
-                    throw new ClaudeCliException($"La CLI claude ha risposto con un errore ({error.Subtype}): {error.Result}");
+                    throw new ClaudeCliException(Loc.T($"La CLI claude ha risposto con un errore ({error.Subtype}): {error.Result}",
+                        $"The claude CLI returned an error ({error.Subtype}): {error.Result}"));
                 case TurnResult result:
                     return result.Result;
             }
         }
 
-        throw new ClaudeCliException($"La CLI claude è terminata senza rispondere. {Stderr()}".Trim());
+        throw new ClaudeCliException(Loc.T($"La CLI claude è terminata senza rispondere. {Stderr()}",
+            $"The claude CLI exited without answering. {Stderr()}").Trim());
     }
 
     /// <summary>Chiude l'input così la CLI termina il turno ed esce da sola; la uccide se non lo fa.</summary>

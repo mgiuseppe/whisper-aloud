@@ -1,4 +1,5 @@
-﻿using System.ComponentModel;
+﻿using WhisperAloud.Core;
+using System.ComponentModel;
 using System.Drawing.Drawing2D;
 using static WhisperAloud.App.Theme;
 
@@ -161,7 +162,7 @@ internal sealed class FieldFrame : Panel
         BackColor = Surface;
         Height = height;
         Padding = new Padding(S(10), S(7), S(6), resizable ? S(16) : S(6));
-        if (resizable) new ToolTip().SetToolTip(this, "Trascina per ingrandire, doppio clic per allargare o ridurre");
+        if (resizable) new ToolTip().SetToolTip(this, Loc.T("Trascina per ingrandire, doppio clic per allargare o ridurre", "Drag to enlarge, double-click to expand or shrink"));
         inner.BackColor = Field;
         inner.ForeColor = Fore;
         inner.Font = Body(10f);
@@ -527,7 +528,7 @@ internal sealed class KeyCapBox : PaintedControl
         if (Focused)
         {
             using var hint = Body(9.5f);
-            TextRenderer.DrawText(g, "Premi la combinazione…", hint, ClientRectangle, Accent,
+            TextRenderer.DrawText(g, Loc.T("Premi la combinazione…", "Press the combination…"), hint, ClientRectangle, Accent,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
             return;
         }

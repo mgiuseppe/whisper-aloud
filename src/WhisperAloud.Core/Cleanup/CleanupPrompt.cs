@@ -29,6 +29,18 @@ public static partial class CleanupPrompt
         Tutto il resto resta com'è: stesse parole, stesso ordine, stessa costruzione delle frasi, stesso registro, stessa lingua. Non riformulare, non riassumere, non migliorare lo stile, non aggiungere né togliere informazioni, non spiegare il perché di qualcosa se chi parla non l'ha detto. Nel dubbio lascia la parola originale.
         """;
 
+    /// <summary>Istruzione del prompt "Proofread", per l'interfaccia in inglese: la stessa di <see cref="Correction"/>.</summary>
+    public const string CorrectionEnglish = """
+        Proofread the transcription like a copy editor, with minimal edits. The only changes allowed are:
+        - punctuation and capitalisation; line breaks only if the speaker dictates a list or clearly changes topic;
+        - removing hesitation sounds (uh, um, er) and words repeated by mistake ("the the" becomes "the");
+        - removing a filler word (like, basically, you know) only when it carries no meaning;
+        - when the speaker corrects themselves ("at three, no, at four"), keeping only the final version;
+        - fixing a mistranscribed word only when the right one is obvious from the context.
+
+        Everything else stays as it is: same words, same order, same sentence structure, same register, same language. Do not rephrase, summarise, improve the style, add or remove information, or explain why something happens if the speaker did not say it. When in doubt, keep the original word.
+        """;
+
     /// <summary>Messaggio per claude: istruzione e trascrizione, ciascuna tra i suoi tag.</summary>
     public static string Build(string instructions, string transcript) =>
         $"<istruzione>\n{instructions.Trim()}\n</istruzione>\n\n{Wrap(transcript)}";
