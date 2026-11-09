@@ -1,160 +1,93 @@
 # Whisper Aloud
 
-Dettatura vocale per Windows in stile Wispr Flow: tieni premuta una scorciatoia, parli, rilasci, e il testo compare nella finestra attiva. La trascrizione è locale; la riscrittura con Claude è opzionale, su una scorciatoia separata.
+Voice dictation for Windows in the style of Wispr Flow: hold a shortcut, speak, release, and the text appears in the active window. Transcription runs locally on your GPU; rewriting with Claude is optional and only happens when you ask for it.
 
-- **Trascrizione locale** con [Whisper.net](https://github.com/sandrohanea/whisper.net) (whisper.cpp) e il modello `large-v3-turbo` quantizzato, sulla GPU via Vulkan.
-- **Riscrittura leggera con Claude**, solo quando la chiedi, tramite la CLI di [Claude Code](https://docs.claude.com/en/docs/claude-code) in modalità headless: usa l'abbonamento Claude già attivo sulla macchina, senza chiavi API da pagare a consumo.
+- **Local transcription** with [Whisper.net](https://github.com/sandrohanea/whisper.net) (whisper.cpp) and the quantized `large-v3-turbo` model, on the GPU through Vulkan: about half a second for a typical sentence.
+- **Optional rewriting with Claude** through the [Claude Code](https://code.claude.com/docs/en/overview) CLI in headless mode, using the Claude subscription already signed in on the machine, with no pay-per-use API key. Pick a prompt: light proofreading, meeting minutes, translation, or your own.
+- **Status window** that shows what the app is doing, lets you switch prompt while you speak and keeps the result one click away.
 
-## Come funziona
+![The status window while recording](docs/images/overlay-recording.png)
 
-```
-scorciatoia premuta ──► microfono (NAudio, 16 kHz mono)
-         rilasciata ──► Whisper large-v3-turbo (GPU, Vulkan)
-                    ──► [solo con Shift] claude -p --model sonnet (processo già avviato, stream-json)
-                    ──► appunti + Ctrl+V nella finestra attiva (appunti poi ripristinati)
-```
+The interface is in Italian and the defaults are tuned for Italian dictation; Whisper's language can be changed in the settings.
 
-| Scorciatoia | Cosa fa |
-|---|---|
-| `Ctrl+Alt+D` (tieni premuto) | detta e incolla la trascrizione di Whisper |
-| `Ctrl+Alt+Shift+D` (tieni premuto) | detta, riscrivi con Claude, incolla |
-| `Ctrl+Alt+R` | riscrive con Claude il testo selezionato e lo sostituisce |
+## Prerequisites
 
-In alternativa al push-to-talk c'è la modalità **avvio/stop** (`Mode: Toggle`): una pressione avvia la registrazione, la successiva la termina. È comoda per le dettature lunghe.
+- Windows 10 or 11, x64, with the [.NET 10 SDK](https://dotnet.microsoft.com/download).
+- A GPU with a Vulkan driver for fast transcription. Without one Whisper falls back to the CPU and is much slower. On laptops with hybrid graphics the app picks the dedicated GPU automatically: see [latency](docs/latency.md#laptops-with-two-gpus).
+- For rewriting only: [Claude Code](https://code.claude.com/docs/en/overview) installed and signed in (`claude` on the `PATH` or in `%USERPROFILE%\.local\bin`). The app never handles logins or credentials; without Claude Code it still transcribes.
 
-Le scorciatoie con `Spazio` sono spesso già prese (Superwhisper, PowerToys): se una scorciatoia è occupata l'app lo segnala e registra comunque le altre.
-
-### La finestrella di stato
-
-In basso al centro dello schermo compare una finestrella sempre in primo piano che non ruba il focus (l'incolla finisce comunque nella finestra in cui stavi scrivendo):
-
-- **In ascolto**: pallino rosso, barra del livello del microfono; se dopo 1,5 s non arriva suono lo dice subito.
-- **Trascrizione… / Riscrittura con Claude…**: pallino arancione con i secondi che scorrono, così si vede che sta lavorando.
-- **Incollato**: il testo, il tempo totale e il pulsante **Copia**; si chiude da sola dopo 10 s (resta aperta finché il mouse è sopra).
-- **Avvisi**: pressione troppo breve, microfono muto, nessuna parola riconosciuta, errori.
-
-Si sposta trascinandola (dallo sfondo, dal titolo o dalla forma d'onda) e la posizione resta salvata (`OverlayLeft`/`OverlayTop`); un doppio clic la riporta in basso al centro. I risultati in markdown (per esempio la Minuta) si vedono con titoli e grassetti formattati; **Copia** copia il markdown originale.
-
-L'ultima dettatura si ricopia anche dal menu del tray (**Copia ultima dettatura**). Con `ShowOverlay: false` la finestrella sparisce e gli avvisi tornano nei fumetti del tray.
-
-L'icona nel tray è grigia a riposo, rossa mentre ascolta, arancione mentre lavora.
-
-### La riscrittura
-
-Whisper large-v3-turbo dà già una buona trascrizione italiana con punteggiatura, quindi Claude non è applicato a ogni dettatura. Quando lo chiedi, applica uno dei **prompt** configurati.
-
-### I prompt
-
-Nella pagina Claude delle impostazioni si gestisce un elenco di prompt (nome, istruzioni, incolla sì/no) e si sceglie il predefinito, usato da `Ctrl+Alt+Shift+D` e `Ctrl+Alt+R`; il predefinito si cambia anche dal menu del tray. Durante la registrazione la finestrella mostra un selettore: si può scegliere un altro prompt solo per quella dettatura, oppure **Solo trascrizione**; vale anche partendo da `Ctrl+Alt+D`. Prompt inclusi:
-
-| Prompt | Cosa fa | Incolla |
-|---|---|---|
-| Correzione | correttore di bozze, interventi minimi | sì |
-| Minuta | riassunto breve, argomenti, call to action | no: resta nella finestrella, da copiare |
-| Traduzione in inglese | traduce la dettatura | sì |
-| Pirata ubriaco | riscrive come un pirata ubriaco | sì |
-
-Il prompt di sistema della CLI è generale e fisso; l'istruzione del prompt scelto viaggia nel messaggio tra tag `<istruzione>`, accanto al testo tra tag `<dettato>`. Così lo stesso processo `claude` già avviato serve qualunque prompt e cambiarlo non costa latenza. Il prompt Correzione segue queste regole: interventi minimi (punteggiatura, esitazioni, parole ripetute per sbaglio, autocorrezioni come "alle tre, anzi alle quattro"), stesse parole e stesso ordine, **mai cambiare il senso né aggiungere nulla**; nel dubbio lascia la parola originale. Il testo dettato è trattato come materiale da ripulire, non come istruzioni: se detti una domanda, viene ripulita, non risposta.
-
-La CLI viene avviata con `--tools ""` (nessuno strumento: non può leggere file né eseguire comandi), `--safe-mode` (ignora CLAUDE.md, hook e plugin dell'utente), `--strict-mcp-config`, `--no-session-persistence` e una cartella di lavoro vuota.
-
-## Latenza
-
-Misure su MSI Raider GE76 (RTX 3080 Laptop, 8 GB), 29 ottobre 2026, con `tools/WhisperAloud.Bench`.
-
-**Trascrizione** (Whisper large-v3-turbo q5_0, Vulkan, mediana di 3 esecuzioni; il modello si carica in ~1,2 s all'avvio dell'app):
-
-| Audio | Tempo |
-|---|---|
-| 6 s | ~0,41–0,46 s |
-| 12 s | ~0,48–0,50 s |
-| 24 s | ~0,59–0,60 s |
-
-**Attenzione ai portatili con due GPU.** Vulkan elenca per prima la Intel Iris Xe integrata e whisper.cpp, senza indicazioni, usa la GPU 0: sugli stessi file la trascrizione passava da ~0,4 s a **~11–13 s**. L'app sceglie quindi da sola la prima GPU dedicata (`GpuDevice: -1`) e scrive nel log errori quale usa (`using Vulkan1 backend`).
-
-**Riscrittura con la CLI `claude`**: il costo vero è l'avvio della CLI, non il modello (la chiamata API dura circa 1 s). Una `claude -p` lanciata da shell per ogni testo impiegava 6–8 s; con il processo di riserva già avviato si paga solo la risposta.
-
-| Modello | Processo nuovo a ogni dettatura | Processo di riserva già avviato |
-|---|---|---|
-| haiku | mediana 2,5–4,0 s (2,4–5,8 s) | mediana 1,7–2,5 s (1,3–5,1 s) |
-| sonnet | mediana 4,4 s (2,5–7,8 s) | mediana 4,2 s (2,9–4,6 s) |
-
-I numeri variano parecchio da una prova all'altra (rete, carico del servizio). In più, la CLI finisce il turno con una richiesta accessoria di circa 3 s dopo la risposta: l'app non la aspetta, prende il testo appena arriva il messaggio `assistant` dello stream-json e congeda il processo.
-
-**Qualità**: con lo stesso prompt Haiku a volte riformula (ha tolto "volevo dire che", ha perso un "perché" trasformando la frase in una domanda), Sonnet è rimasto fedele in tutti i casi di `samples/trascrizioni.txt`. Per questo il default è Sonnet: la riscrittura è opzionale, e qualche secondo in più vale meno di un testo alterato.
-
-Totale tipico dal rilascio della scorciatoia: **~0,5 s** solo Whisper, **~4–5 s** con la riscrittura Sonnet (~2–3 s con Haiku). Ogni dettatura reale viene registrata in `%LOCALAPPDATA%\WhisperAloud\latency.csv`.
-
-### Perché un processo "di riserva"
-
-Un processo persistente con `--input-format stream-json` risponde in 1,5–2 s, ma accumula la conversazione: le dettature successive vedono le precedenti e il modello può mescolarle. L'app quindi usa ogni processo per **una sola** dettatura e ne avvia subito un altro in background, che resta in attesa della successiva (e viene rinnovato ogni 20 minuti).
-
-## Requisiti
-
-- Windows 10/11 x64, [.NET 10 SDK](https://dotnet.microsoft.com/download)
-- [Claude Code](https://docs.claude.com/en/docs/claude-code) installato e autenticato (`claude` nel PATH o in `%USERPROFILE%\.local\bin`). L'app non gestisce login né credenziali: si appoggia alla CLI già autenticata.
-- GPU con driver Vulkan per la trascrizione veloce (senza GPU funziona su CPU, più lentamente). Sui portatili con grafica ibrida serve la GPU dedicata: vedi la nota nella sezione Latenza.
-
-## Uso
+## Usage
 
 ```bash
 dotnet run -c Release --project src/WhisperAloud.App
 ```
 
-Al primo avvio l'app scarica il modello Whisper (~550 MB) in `%LOCALAPPDATA%\WhisperAloud\models` e crea le impostazioni in `%APPDATA%\WhisperAloud\settings.json`. Dal menu dell'icona nel tray si aprono impostazioni, registro latenze e log errori.
+The app lives in the system tray. On first start it downloads the Whisper model (~550 MB) to `%LOCALAPPDATA%\WhisperAloud\models` and creates `%APPDATA%\WhisperAloud\settings.json`. The tray icon is grey when idle, red while listening and orange while working.
 
-### Finestra Impostazioni
+### Shortcuts
 
-Doppio clic sull'icona del tray, oppure **Impostazioni...** dal menu. Quattro schede: **Dettatura** (push-to-talk o avvio/stop, scorciatoie da registrare premendole nel campo), **Trascrizione** (microfono, GPU, lingua, modello e contesto di Whisper), **Claude** (prompt e predefinito, modello, processo di riserva, timeout, eseguibile), **Incolla e finestrella**. Le modifiche valgono appena premi Salva: l'app ricarica solo quello che serve (Whisper se cambiano GPU, lingua o modello; il processo `claude` se cambiano le sue opzioni). Mentre la finestra è aperta le scorciatoie sono sospese, così si possono premere nei campi. Il link **Apri settings.json** apre il file per le modifiche a mano.
-
-### Impostazioni principali
-
-| Chiave | Default | Note |
-|---|---|---|
-| `Mode` | `PushToTalk` | `PushToTalk` (tieni premuto) o `Toggle` (premi per iniziare e per finire) |
-| `HotkeyDictate` / `HotkeyDictateWithClaude` / `HotkeyCleanSelection` | vedi sopra | formato `Ctrl+Alt+D`, nomi tasti dell'enum `Keys` (`Space`, `F9`, ...) |
-| `Language` | `it` | lingua di Whisper |
-| `WhisperModel` | `ggml-large-v3-turbo-q5_0.bin` | nome in `models` o percorso assoluto |
-| `WhisperPrompt` | frase in italiano | contesto per Whisper: utile per nomi e termini ricorrenti |
-| `MicrophoneDevice` | `-1` | `-1` = microfono predefinito di Windows; si sceglie anche dal menu **Microfono** del tray |
-| `GpuDevice` | `-1` | GPU Vulkan per Whisper; `-1` = prima GPU dedicata, altrimenti l'indice come lo elenca Vulkan |
-| `ShowOverlay` | `true` | finestrella di stato in primo piano |
-| `Claude.Model` | `sonnet` | `haiku` è più veloce ma a volte riformula |
-| `Claude.UseWarmProcess` | `true` | tiene un processo `claude` pronto per la dettatura successiva |
-| `Claude.Prompts` / `Claude.SelectedPrompt` | 4 prompt / `Correzione` | elenco dei prompt (`Name`, `Instructions`, `Paste`) e predefinito |
-| `Claude.SystemPrompt` | vuoto | solo da file: sostituisce il prompt di sistema generale (deve spiegare i tag `<istruzione>` e `<dettato>`) |
-| `AppendSpace` / `RestoreClipboard` | `true` | spazio dopo il testo incollato / appunti ripristinati |
-
-Le modifiche fatte a mano nel file valgono al riavvio dell'app; quelle dalla finestra Impostazioni subito.
-
-## Struttura
-
-| Progetto | Contenuto |
+| Shortcut | What it does |
 |---|---|
-| `src/WhisperAloud.Core` | trascrizione (`WhisperTranscriber`), riscrittura (`ClaudeCleaner`, protocollo stream-json), impostazioni, registro latenze |
-| `src/WhisperAloud.App` | app WinForms nel tray in tema scuro (controlli disegnati in `ModernControls`, colori in `Theme`): `RegisterHotKey`, registrazione NAudio, finestrella di stato, finestra Impostazioni, incolla con `SendInput` |
-| `tools/WhisperAloud.Bench` | benchmark della pipeline su file audio |
-| `tests/WhisperAloud.Core.Tests` | test xUnit di protocollo, prompt e argomenti della CLI |
-| `samples` | tre frasi sintetizzate con la voce Elsa di Windows (per i tempi di Whisper) e `trascrizioni.txt` (per qualità e tempi della riscrittura) |
+| `Ctrl+Alt+D` (hold) | dictate and paste Whisper's transcription as it is |
+| `Ctrl+Alt+Shift+D` (hold) | dictate, rewrite with the default Claude prompt, paste |
+| `Ctrl+Alt+R` | rewrite the selected text with the default prompt and replace it |
 
-```bash
-dotnet test
-dotnet run -c Release --project tools/WhisperAloud.Bench
-dotnet run -c Release --project tools/WhisperAloud.Bench -- --solo-whisper --gpu 1
-```
+Instead of holding the shortcut you can switch to **start/stop** mode: press once to start recording and again to stop, handy for long dictations. Shortcuts can be changed in the settings; if one is already taken by another app, Whisper Aloud says so and still registers the others.
 
-## Limiti noti
+### Status window
 
-- Push-to-talk: il rilascio si rileva controllando il tasto ogni 15 ms, perché `RegisterHotKey` segnala solo la pressione.
-- L'incolla passa dagli appunti: gli appunti vengono ripristinati dopo 400 ms, ma i gestori di cronologia degli appunti vedono comunque il testo dettato.
-- I campioni audio sono voce sintetica: misurano bene i tempi, non la qualità della trascrizione sulla voce reale.
-- Il processo di riserva di `claude` resta avviato anche se non usi la riscrittura (memoria, nessuna richiesta al modello finché non serve).
-- Uso personale: ogni dettatura riscritta è una richiesta al modello e conta sui limiti d'uso dell'abbonamento Claude.
+A small always-on-top window at the bottom of the screen follows each dictation without stealing focus, so the text still lands where you were typing:
 
-## Uso personale e termini di Anthropic
+- **Listening**: a waveform follows your voice, with a warning if the microphone sends no sound.
+- **Working**: transcription and rewriting show a running timer.
+- **Done**: the text, the total time and a **Copy** button.
 
-Whisper Aloud è un progetto personale, non affiliato ad Anthropic né approvato da Anthropic. Per la riscrittura avvia la CLI di Claude Code così come è distribuita, senza modificarla: l'accesso si fa con la procedura di Anthropic e l'app non legge, salva né trasmette credenziali o token. Chi la usa lo fa con il proprio account Claude, secondo i [termini di Anthropic](https://code.claude.com/docs/en/legal-and-compliance) e i limiti d'uso del proprio abbonamento. Per usarla dentro prodotti o servizi destinati ad altri, Anthropic richiede l'autenticazione con chiave API.
+![Result pasted into the active window](docs/images/overlay-result.png)
 
-## Licenza
+Drag it wherever you like: the position is remembered, and a double click brings it back to the bottom centre. The last dictation can also be copied again from the tray menu.
+
+### Prompts
+
+While recording, the selector under the waveform picks the Claude prompt for that dictation, or **Solo trascrizione** (transcription only), even if you started with `Ctrl+Alt+D`. Four prompts are included:
+
+| Prompt | What it does | Pastes the result |
+|---|---|---|
+| Correzione | light proofreading: punctuation, hesitations, self-corrections; never changes the meaning | yes |
+| Minuta | meeting minutes: short summary, topics, calls to action | no, it stays in the status window to copy |
+| Traduzione in inglese | translates the dictation into English | yes |
+| Pirata ubriaco | rewrites it the way a drunk pirate would say it | yes |
+
+![Minutes shown in the status window](docs/images/overlay-minute.png)
+
+You can edit them, add your own and choose the default in the settings; the default can also be changed from the tray menu.
+
+## Settings
+
+Double-click the tray icon, or choose **Impostazioni...** from its menu. Four pages cover dictation mode and shortcuts, microphone and GPU, Claude and its prompts, and what happens after the transcription. Changes apply as soon as you press **Salva** (Save), without restarting the app.
+
+![Settings window](docs/images/settings-dictation.png)
+
+Every option, the prompt editor and the `settings.json` reference are described in [docs/settings.md](docs/settings.md).
+
+## Documentation
+
+- [Settings](docs/settings.md): the settings window, prompts and `settings.json`.
+- [How it works](docs/how-it-works.md): recording, transcription, rewriting with the Claude Code CLI and pasting.
+- [Latency](docs/latency.md): measurements, model choice and the hybrid-graphics pitfall.
+- [Contributing](CONTRIBUTING.md): project structure, build, tests and benchmark.
+
+## Known limitations
+
+- Push-to-talk detects the release by checking the key every 15 ms, because `RegisterHotKey` only reports the key press.
+- Pasting goes through the clipboard: the previous contents are restored after 400 ms, but clipboard history managers still see the dictated text.
+- The bundled audio samples use a synthetic voice: they measure timing well, not transcription quality on a real voice.
+- The standby `claude` process stays running even if you never use rewriting (memory only, no requests to the model until needed).
+- Every rewritten dictation is a request to the model and counts towards the usage limits of your Claude subscription.
+
+## Personal use and Anthropic's terms
+
+Whisper Aloud is a personal project, not affiliated with or endorsed by Anthropic. For rewriting it runs the Claude Code CLI exactly as distributed, without modifying it: you sign in through Anthropic's own flow, and the app never reads, stores or transmits credentials or tokens. Anyone using it does so with their own Claude account, under [Anthropic's terms](https://code.claude.com/docs/en/legal-and-compliance) and the usage limits of their own subscription. To use it inside products or services offered to others, Anthropic requires API key authentication.
+
+## License
 
 [MIT](LICENSE).
