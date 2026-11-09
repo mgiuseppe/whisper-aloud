@@ -7,7 +7,7 @@ Voice dictation for Windows in the style of Wispr Flow: hold a shortcut, speak, 
 - **Optional rewriting with Claude**
   - Through the [Claude Code](https://code.claude.com/docs/en/overview) CLI in headless mode, using the Claude subscription already signed in on the machine.
 - **Pick a prompt**
-  - Light proofreading, meeting minutes, translation, or your own.
+  - Light proofreading, meeting notes, translation, or your own.
 
 ![Dictating an email with Whisper Aloud](docs/images/usage.gif)
 

@@ -524,7 +524,7 @@ internal sealed class SettingsForm : Form
                       "What Claude should do with the dictated text. Drag the handle at the bottom to enlarge the box."),
                     Frame(InstructionsBox, 0, S(104), resizable: true), below: true),
                 new SettingRow(T("Incolla il risultato", "Paste the result"),
-                    T("Spento: il risultato resta nella finestrella, da copiare. Utile per minute e riassunti.", "Off: the result stays in the status window, ready to copy. Useful for minutes and summaries."), PasteSwitch));
+                    T("Spento: il risultato resta nella finestrella, da copiare. Utile per minute e riassunti.", "Off: the result stays in the status window, ready to copy. Useful for meeting notes and summaries."), PasteSwitch));
         }
 
         public TextBox NameBox { get; } = new();

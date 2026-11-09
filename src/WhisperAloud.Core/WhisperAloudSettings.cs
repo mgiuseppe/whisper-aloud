@@ -149,8 +149,8 @@ public sealed class ClaudeOptions
             new() { Name = "Proofread", Instructions = Cleanup.CleanupPrompt.CorrectionEnglish },
             new()
             {
-                Name = "Minutes",
-                Instructions = "Write minutes of the recording: a short summary, a list of topics, one or more calls to action. " +
+                Name = "Meeting notes",
+                Instructions = "Write meeting notes for the recording: a short summary, a list of topics, one or more calls to action. " +
                                "Be extremely concise and do not ask the user questions, because the result is shown in a read-only box.",
                 Paste = false,
             },

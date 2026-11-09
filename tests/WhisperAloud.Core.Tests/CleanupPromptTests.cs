@@ -83,7 +83,7 @@ public class CleanupPromptTests
         var english = ClaudeOptions.DefaultPrompts(english: true);
 
         Assert.Equal(italian.Select(p => p.Paste), english.Select(p => p.Paste));
-        Assert.Equal("Minutes", english[1].Name);
+        Assert.Equal("Meeting notes", english[1].Name);
         Assert.Equal(CleanupPrompt.CorrectionEnglish, english[0].Instructions);
     }
 }

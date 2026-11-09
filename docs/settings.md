@@ -54,7 +54,7 @@ A prompt tells Claude what to do with the dictated text. Each one has:
 
 - **Name**: shown in the status window and in the menus.
 - **Instructions**: what Claude should do, in plain words. Drag the handle at the bottom of the box to enlarge it while you write; double-click the handle to switch between compact and large.
-- **Paste the result**: when on, the result is pasted into the active window; when off, it stays in the status window until you close it, ready to copy. Useful for minutes and summaries.
+- **Paste the result**: when on, the result is pasted into the active window; when off, it stays in the status window until you close it, ready to copy. Useful for meeting notes and summaries.
 
 **+ Add prompt** adds a new one and **Delete** deletes it; at least one prompt must remain, and names must be unique.
 
@@ -63,11 +63,11 @@ Included prompts (the Italian interface starts with the same four, in Italian):
 | Prompt | Instructions in short | Pastes |
 |---|---|---|
 | Proofread | light proofreading: punctuation, hesitations, words repeated by mistake, self-corrections ("at three, no, at four"); same words, same order, never changes the meaning | yes |
-| Minutes | short summary, list of topics, one or more calls to action, very concise | no |
+| Meeting notes | short summary, list of topics, one or more calls to action, very concise | no |
 | Translate into Italian | translate the dictation into Italian; in the Italian interface it translates into English | yes |
 | Drunk pirate | rewrite it the way a drunk pirate would say it | yes |
 
-![Minutes shown in the status window](images/overlay-minute.png)
+![Meeting notes shown in the status window](images/overlay-minute.png)
 
 Claude may answer in Markdown: the status window shows headings, **bold** and bullet lists formatted, while **Copy** and pasting use the original Markdown.
 

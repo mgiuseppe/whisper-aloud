@@ -43,7 +43,7 @@ The tests cover the parts that do not need a microphone, a GPU or the `claude` C
 ```bash
 dotnet run -c Release --project tools/WhisperAloud.Bench
 dotnet run -c Release --project tools/WhisperAloud.Bench -- --solo-whisper --gpu 1
-dotnet run -c Release --project tools/WhisperAloud.Bench -- haiku --prompt "Minutes"
+dotnet run -c Release --project tools/WhisperAloud.Bench -- haiku --prompt "Meeting notes"
 ```
 
 The benchmark transcribes the WAV files in `samples` (3 runs each), then rewrites the sentences in `samples/trascrizioni.txt`, first starting a new `claude` process each time and then through the standby process, printing the text before and after so quality can be checked too. Options:
