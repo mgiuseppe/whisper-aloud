@@ -138,7 +138,7 @@ internal sealed class SettingsForm : Form
         new SettingsCard(
             new SettingRow("Lingua", "Lingua parlata; auto la riconosce da sola ma sbaglia più spesso.", _language),
             new SettingRow("Modello", $"Nome del file in {AppPaths.ModelsDir} oppure percorso completo.", Frame(_whisperModel, 0, S(36)), below: true),
-            new SettingRow("Contesto", "Aiuta punteggiatura, nomi e termini tecnici ricorrenti.", Frame(_whisperPrompt, 0, S(74)), below: true)));
+            new SettingRow("Contesto", "Aiuta punteggiatura, nomi e termini tecnici ricorrenti.", Frame(_whisperPrompt, 0, S(82), resizable: true), below: true)));
 
     private Page BuildClaudePage()
     {
@@ -448,9 +448,9 @@ internal sealed class SettingsForm : Form
         TextAlign = ContentAlignment.BottomLeft,
     };
 
-    private static FieldFrame Frame(Control inner, int width, int height)
+    private static FieldFrame Frame(Control inner, int width, int height, bool resizable = false)
     {
-        var frame = new FieldFrame(inner, height);
+        var frame = new FieldFrame(inner, height, resizable);
         if (width > 0) frame.Width = width;
         return frame;
     }
@@ -495,7 +495,8 @@ internal sealed class SettingsForm : Form
 
             Card = new SettingsCard(
                 new SettingRow("Nome", null, nameRow),
-                new SettingRow("Istruzioni", "Cosa deve fare Claude con il testo dettato.", Frame(InstructionsBox, 0, S(96)), below: true),
+                new SettingRow("Istruzioni", "Cosa deve fare Claude con il testo dettato. Trascina la maniglia in basso per ingrandire il riquadro.",
+                    Frame(InstructionsBox, 0, S(104), resizable: true), below: true),
                 new SettingRow("Incolla il risultato", "Spento: il risultato resta nella finestrella, da copiare. Utile per minute e riassunti.", PasteSwitch));
         }
 

@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Drawing.Drawing2D;
 using static Dettatura.App.Theme;
 
@@ -142,14 +142,26 @@ internal sealed class ToggleSwitch : PaintedControl
 internal sealed class FieldFrame : Panel
 {
     private readonly Control _inner;
+    private readonly bool _resizable;
+    private readonly int _compactHeight;
+    private int? _dragStartY;
+    private int _dragStartHeight;
+    private bool _gripHovered;
 
-    public FieldFrame(Control inner, int height)
+    /// <param name="resizable">
+    /// Mostra in basso una maniglia: trascinandola il riquadro si allunga per scrivere comodamente,
+    /// con un doppio clic passa da compatto a grande.
+    /// </param>
+    public FieldFrame(Control inner, int height, bool resizable = false)
     {
         _inner = inner;
+        _resizable = resizable;
+        _compactHeight = height;
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
         BackColor = Surface;
         Height = height;
-        Padding = new Padding(S(10), S(7), S(6), S(6));
+        Padding = new Padding(S(10), S(7), S(6), resizable ? S(16) : S(6));
+        if (resizable) new ToolTip().SetToolTip(this, "Trascina per ingrandire, doppio clic per allargare o ridurre");
         inner.BackColor = Field;
         inner.ForeColor = Fore;
         inner.Font = Body(10f);
@@ -173,9 +185,86 @@ internal sealed class FieldFrame : Panel
             using var pen = new Pen(Accent, S(2));
             e.Graphics.DrawLine(pen, S(6), Height - S(1), Width - S(7), Height - S(1));
         }
+        if (_resizable)
+        {
+            // Maniglia: due trattini centrati in basso.
+            var color = _gripHovered || _dragStartY is not null ? Fore : Muted;
+            using var grip = new Pen(color, Math.Max(1.5f, S(2) * 0.75f)) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+            var cx = Width / 2f;
+            var y = Height - S(10);
+            e.Graphics.DrawLine(grip, cx - S(14), y, cx + S(14), y);
+            e.Graphics.DrawLine(grip, cx - S(8), y + S(4), cx + S(8), y + S(4));
+        }
     }
 
-    protected override void OnClick(EventArgs e) { _inner.Focus(); base.OnClick(e); }
+    private bool InGrip(Point location) => _resizable && location.Y >= Height - S(16);
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        if (e.Button == MouseButtons.Left && InGrip(e.Location))
+        {
+            _dragStartY = Cursor.Position.Y;
+            _dragStartHeight = Height;
+        }
+        base.OnMouseDown(e);
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        if (_dragStartY is { } startY)
+        {
+            Resize(_dragStartHeight + Cursor.Position.Y - startY);
+        }
+        else
+        {
+            var hovered = InGrip(e.Location);
+            Cursor = hovered ? Cursors.SizeNS : Cursors.IBeam;
+            if (hovered != _gripHovered)
+            {
+                _gripHovered = hovered;
+                Invalidate();
+            }
+        }
+        base.OnMouseMove(e);
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        _dragStartY = null;
+        Invalidate();
+        base.OnMouseUp(e);
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        _gripHovered = false;
+        Invalidate();
+        base.OnMouseLeave(e);
+    }
+
+    protected override void OnDoubleClick(EventArgs e)
+    {
+        if (InGrip(PointToClient(Cursor.Position)))
+        {
+            Resize(Height > _compactHeight + S(20) ? _compactHeight : Math.Max(_compactHeight, S(340)));
+        }
+        base.OnDoubleClick(e);
+    }
+
+    /// <summary>Cambia l'altezza e chiede ai contenitori di ridisporsi, così le schede sotto scorrono.</summary>
+    private new void Resize(int height)
+    {
+        height = Math.Clamp(height, _compactHeight, S(800));
+        if (height == Height) return;
+        Height = height;
+        for (var parent = Parent; parent is not null; parent = parent.Parent) parent.PerformLayout();
+    }
+
+    protected override void OnClick(EventArgs e)
+    {
+        if (!InGrip(PointToClient(Cursor.Position))) _inner.Focus();
+        base.OnClick(e);
+    }
 }
 
 /// <summary>Scheda selezionabile con titolo e descrizione: le scelte esclusive al posto dei radio button.</summary>
