@@ -37,7 +37,7 @@ internal sealed class TrayApp : ApplicationContext
     {
         _settings = settings;
         _mic = new MicRecorder(settings.MicrophoneDevice);
-        _overlay = settings.ShowOverlay ? new OverlayForm() : null;
+        _overlay = settings.ShowOverlay ? CreateOverlay() : null;
         _copyLastItem = new ToolStripMenuItem("Copia ultima dettatura", null, (_, _) => CopyLast()) { Enabled = false };
 
         _statusItem = new ToolStripMenuItem("Avvio...") { Enabled = false };
@@ -427,6 +427,9 @@ internal sealed class TrayApp : ApplicationContext
         // Con la finestra aperta si può dettare: si applica a dettatura finita, per non cambiare microfono o modello a metà.
         while (_busy || _mic.IsRecording) await Task.Delay(200);
         var old = _settings;
+        // La posizione della finestrella non è nella finestra Impostazioni: si tiene quella attuale.
+        updated.OverlayLeft = old.OverlayLeft;
+        updated.OverlayTop = old.OverlayTop;
         _settings = updated;
         try
         {
@@ -447,7 +450,7 @@ internal sealed class TrayApp : ApplicationContext
         if (old.ShowOverlay != updated.ShowOverlay)
         {
             _overlay?.Dispose();
-            _overlay = updated.ShowOverlay ? new OverlayForm() : null;
+            _overlay = updated.ShowOverlay ? CreateOverlay() : null;
         }
 
         if (JsonSerializer.Serialize(old.Claude) != JsonSerializer.Serialize(updated.Claude))
@@ -474,6 +477,21 @@ internal sealed class TrayApp : ApplicationContext
         if (previous is not null) await previous.DisposeAsync();
         await LoadTranscriberAsync();
         if (_transcriber is not null) _overlay?.ShowMessage("Pronta", $"Whisper ricaricato ({WhisperTranscriber.LoadedRuntime}).");
+    }
+
+    private OverlayForm CreateOverlay()
+    {
+        var overlay = new OverlayForm
+        {
+            CustomLocation = _settings.OverlayLeft is { } left && _settings.OverlayTop is { } top ? new Point(left, top) : null,
+        };
+        overlay.PositionChanged += position =>
+        {
+            _settings.OverlayLeft = position?.X;
+            _settings.OverlayTop = position?.Y;
+            _settings.Save();
+        };
+        return overlay;
     }
 
     private void Remember(string text)

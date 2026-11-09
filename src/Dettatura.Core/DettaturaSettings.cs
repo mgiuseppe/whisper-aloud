@@ -33,6 +33,11 @@ public sealed class DettaturaSettings
     /// <summary>Mostra in primo piano la finestrella di stato (registrazione, trascrizione, testo incollato).</summary>
     public bool ShowOverlay { get; set; } = true;
 
+    /// <summary>Posizione della finestrella scelta trascinandola (angolo in alto a sinistra); vuota = in basso al centro.</summary>
+    public int? OverlayLeft { get; set; }
+
+    public int? OverlayTop { get; set; }
+
     /// <summary>Indice del microfono per WaveIn; -1 è il dispositivo predefinito di Windows.</summary>
     public int MicrophoneDevice { get; set; } = -1;
 

@@ -24,7 +24,12 @@ internal sealed partial class OverlayForm : Form
     private readonly Waveform _wave = new();
     private readonly PromptPicker _picker = new();
     private readonly Panel _textFrame = new();
-    private readonly TextBox _text = new();
+    private readonly RichTextBox _text = new();
+    private readonly Font _textFont = Body(10f);
+    private readonly Font _textBold = Strong(10f);
+    private string _rawText = string.Empty;
+    private Point? _dragOffset;
+    private bool _dragged;
     private readonly ModernButton _copy = new("Copia", primary: true);
     private readonly ModernButton _close = new("Chiudi");
     private readonly System.Windows.Forms.Timer _tick = new() { Interval = 50 };
@@ -64,13 +69,13 @@ internal sealed partial class OverlayForm : Form
         _textFrame.Paint += (_, e) =>
             FillRounded(e.Graphics, Field, new RectangleF(0.5f, 0.5f, _textFrame.Width - 1.5f, _textFrame.Height - 1.5f), S(8), Border);
         _text.Dock = DockStyle.Fill;
-        _text.Multiline = true;
         _text.ReadOnly = true;
         _text.BorderStyle = BorderStyle.None;
         _text.BackColor = Field;
         _text.ForeColor = Fore;
-        _text.Font = Body(10f);
-        _text.ScrollBars = ScrollBars.None; // si scorre con la rotellina
+        _text.Font = _textFont;
+        _text.ScrollBars = RichTextBoxScrollBars.Vertical; // compare solo se il testo non ci sta
+        _text.DetectUrls = false;
         _text.TabStop = false;
         DarkScrollbars(_text);
         _textFrame.Controls.Add(_text);
@@ -82,6 +87,16 @@ internal sealed partial class OverlayForm : Form
 
         Controls.AddRange([_dot, _title, _detail, _wave, _picker, _textFrame, _copy, _close]);
 
+        // Si trascina dallo sfondo, dal titolo o dalla forma d'onda; doppio clic la riporta in basso al centro.
+        foreach (var handle in new Control[] { this, _dot, _title, _detail, _wave })
+        {
+            handle.Cursor = Cursors.SizeAll;
+            handle.MouseDown += OnDragStart;
+            handle.MouseMove += OnDragMove;
+            handle.MouseUp += OnDragEnd;
+            handle.DoubleClick += (_, _) => ResetPosition();
+        }
+
         _tick.Tick += (_, _) => OnTick();
         _autoHide.Tick += (_, _) =>
         {
@@ -90,6 +105,13 @@ internal sealed partial class OverlayForm : Form
             HideNow();
         };
     }
+
+    /// <summary>Posizione scelta dall'utente (angolo in alto a sinistra); null = in basso al centro dello schermo.</summary>
+    [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public Point? CustomLocation { get; set; }
+
+    /// <summary>La posizione è cambiata trascinando (null = riportata in basso al centro): va salvata.</summary>
+    public event Action<Point?>? PositionChanged;
 
     protected override bool ShowWithoutActivation => true;
 
@@ -126,19 +148,18 @@ internal sealed partial class OverlayForm : Form
     /// <param name="sticky">Resta aperta finché non si preme Chiudi: per i risultati che non vengono incollati.</param>
     public void ShowResult(string title, string detail, string text, bool sticky = false)
     {
-        text = text.ReplaceLineEndings(Environment.NewLine); // claude risponde con LF, la TextBox di Windows vuole CRLF
-        _text.Text = text;
+        var plain = SetText(text);
         _copy.Text = "Copia";
         // La casella cresce con il testo (una minuta è più lunga di una frase), fino a un massimo.
-        var measured = TextRenderer.MeasureText(text, _text.Font, new Size(_textFrame.Width - S(30), int.MaxValue),
+        var measured = TextRenderer.MeasureText(plain, _textFont, new Size(_textFrame.Width - S(34), int.MaxValue),
             TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl).Height;
-        _resultTextHeight = Math.Clamp(measured + S(20), S(64), S(320));
+        _resultTextHeight = Math.Clamp(measured + S(24), S(64), S(340));
         Present(Green, title, detail, Mode.Result, sticky ? 0 : ResultSeconds);
     }
 
     public void ShowMessage(string title, string message)
     {
-        _text.Text = message.ReplaceLineEndings(Environment.NewLine);
+        SetText(message);
         Present(Orange, title, string.Empty, Mode.Message, MessageSeconds);
     }
 
@@ -181,8 +202,7 @@ internal sealed partial class OverlayForm : Form
             _ => buttonsTop + _close.Height + S(16),
         };
 
-        var area = Screen.FromPoint(Cursor.Position).WorkingArea;
-        Location = new Point(area.Left + (area.Width - Width) / 2, area.Bottom - Height - S(56));
+        PlaceOnScreen();
 
         _elapsed.Restart();
         _tick.Start();
@@ -222,12 +242,95 @@ internal sealed partial class OverlayForm : Form
         }
     }
 
+    /// <summary>
+    /// Mostra il testo con un markdown minimo (titoli e **grassetto** in neretto, elenchi con il pallino)
+    /// e restituisce la versione senza simboli, che serve a misurare l'altezza.
+    /// </summary>
+    private string SetText(string markdown)
+    {
+        _rawText = markdown.Trim();
+        _text.Clear();
+        var plain = new System.Text.StringBuilder();
+        var lines = _rawText.ReplaceLineEndings("\n").Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i].TrimEnd();
+            var heading = line.StartsWith('#');
+            if (heading) line = line.TrimStart('#').Trim();
+            if (line.StartsWith("- ") || line.StartsWith("* ")) line = "•  " + line[2..];
+
+            var parts = line.Split("**");
+            for (var j = 0; j < parts.Length; j++)
+            {
+                _text.SelectionStart = _text.TextLength;
+                _text.SelectionFont = heading || j % 2 == 1 ? _textBold : _textFont;
+                _text.SelectionColor = Fore;
+                _text.AppendText(parts[j]);
+                plain.Append(parts[j]);
+            }
+            if (i < lines.Length - 1)
+            {
+                _text.AppendText("\n");
+                plain.Append(Environment.NewLine);
+            }
+        }
+        _text.SelectionStart = 0;
+        return plain.ToString();
+    }
+
+    private void PlaceOnScreen()
+    {
+        if (CustomLocation is { } custom)
+        {
+            // Posizione scelta trascinando, tenuta dentro lo schermo anche quando la finestrella cresce.
+            var screen = Screen.FromPoint(custom).WorkingArea;
+            Location = new Point(
+                Math.Clamp(custom.X, screen.Left, Math.Max(screen.Left, screen.Right - Width)),
+                Math.Clamp(custom.Y, screen.Top, Math.Max(screen.Top, screen.Bottom - Height)));
+            return;
+        }
+        var area = Screen.FromPoint(Cursor.Position).WorkingArea;
+        Location = new Point(area.Left + (area.Width - Width) / 2, area.Bottom - Height - S(56));
+    }
+
+    private void OnDragStart(object? sender, MouseEventArgs e)
+    {
+        if (e.Button != MouseButtons.Left) return;
+        _dragOffset = new Point(Cursor.Position.X - Left, Cursor.Position.Y - Top);
+        _dragged = false;
+    }
+
+    private void OnDragMove(object? sender, MouseEventArgs e)
+    {
+        if (_dragOffset is not { } offset) return;
+        var target = new Point(Cursor.Position.X - offset.X, Cursor.Position.Y - offset.Y);
+        if (target == Location) return;
+        Location = target;
+        _dragged = true;
+    }
+
+    private void OnDragEnd(object? sender, MouseEventArgs e)
+    {
+        _dragOffset = null;
+        if (!_dragged) return;
+        _dragged = false;
+        CustomLocation = Location;
+        PositionChanged?.Invoke(Location);
+    }
+
+    private void ResetPosition()
+    {
+        CustomLocation = null;
+        PlaceOnScreen();
+        PositionChanged?.Invoke(null);
+    }
+
     private void CopyText()
     {
-        if (string.IsNullOrEmpty(_text.Text)) return;
+        if (string.IsNullOrEmpty(_rawText)) return;
         try
         {
-            Clipboard.SetText(_text.Text);
+            Clipboard.SetText(_rawText); // si copia il markdown originale, non la versione formattata
             _copy.Text = "Copiato";
         }
         catch (ExternalException)
@@ -248,6 +351,8 @@ internal sealed partial class OverlayForm : Form
         {
             _tick.Dispose();
             _autoHide.Dispose();
+            _textFont.Dispose();
+            _textBold.Dispose();
         }
         base.Dispose(disposing);
     }

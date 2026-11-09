@@ -33,6 +33,8 @@ In basso al centro dello schermo compare una finestrella sempre in primo piano c
 - **Incollato**: il testo, il tempo totale e il pulsante **Copia**; si chiude da sola dopo 10 s (resta aperta finché il mouse è sopra).
 - **Avvisi**: pressione troppo breve, microfono muto, nessuna parola riconosciuta, errori.
 
+Si sposta trascinandola (dallo sfondo, dal titolo o dalla forma d'onda) e la posizione resta salvata (`OverlayLeft`/`OverlayTop`); un doppio clic la riporta in basso al centro. I risultati in markdown (per esempio la Minuta) si vedono con titoli e grassetti formattati; **Copia** copia il markdown originale.
+
 L'ultima dettatura si ricopia anche dal menu del tray (**Copia ultima dettatura**). Con `ShowOverlay: false` la finestrella sparisce e gli avvisi tornano nei fumetti del tray.
 
 L'icona nel tray è grigia a riposo, rossa mentre ascolta, arancione mentre lavora.
