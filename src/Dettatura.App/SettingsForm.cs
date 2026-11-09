@@ -145,19 +145,20 @@ internal sealed class SettingsForm : Form
         _addPrompt.Click += (_, _) => AddPromptEditor(new PromptPreset { Name = "Nuovo prompt" }, focus: true);
         _claudePage = new Page(
             new SettingsCard(
-                new SettingRow("Prompt predefinito",
-                    "Usato da Detta e riscrivi e da Riscrivi la selezione. Mentre registri puoi sceglierne un altro dalla finestrella.",
-                    _defaultPrompt)),
-            Section("I tuoi prompt"),
-            _addPrompt,
-            Section("Modello"),
-            new SettingsCard(
                 new SettingRow("Modello", "sonnet è il più fedele al testo dettato; haiku è più veloce ma a volte riformula.", _claudeModel),
                 new SettingRow("Processo pronto", "Tiene avviato un processo claude: la riscrittura risponde in circa 2 secondi invece di 4-5.", _warmProcess),
                 new SettingRow("Timeout (secondi)", "Attesa massima della risposta, poi incolla la trascrizione grezza.", Frame(_timeout, S(110), S(34)))),
             Section("Avanzate"),
             new SettingsCard(
-                new SettingRow("Eseguibile", "\"claude\" la cerca nel PATH e in %USERPROFILE%\\.local\\bin.", Frame(_claudeExecutable, 0, S(36)), below: true)));
+                new SettingRow("Eseguibile", "\"claude\" la cerca nel PATH e in %USERPROFILE%\\.local\\bin.", Frame(_claudeExecutable, 0, S(36)), below: true)),
+            Section("Prompt"),
+            new SettingsCard(
+                new SettingRow("Prompt predefinito",
+                    "Usato da Detta e riscrivi e da Riscrivi la selezione. Mentre registri puoi sceglierne un altro dalla finestrella.",
+                    _defaultPrompt)),
+            Section("I tuoi prompt"),
+            // Le schede dei prompt vengono inserite qui, prima del pulsante (vedi AddPromptEditor).
+            _addPrompt);
         return _claudePage;
     }
 
@@ -524,8 +525,12 @@ internal sealed class SettingsForm : Form
         public Page(params Control[] items)
         {
             Dock = DockStyle.Fill;
-            AutoScroll = true;
             BackColor = Window;
+            // Solo scorrimento verticale: la barra orizzontale va spenta prima di attivare AutoScroll.
+            HorizontalScroll.Maximum = 0;
+            HorizontalScroll.Enabled = false;
+            HorizontalScroll.Visible = false;
+            AutoScroll = true;
             Controls.AddRange(items);
             DarkScrollbars(this);
         }
