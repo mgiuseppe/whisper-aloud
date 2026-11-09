@@ -2,8 +2,12 @@
 
 Voice dictation for Windows in the style of Wispr Flow: hold a shortcut, speak, release, and the text appears in the active window. Transcription runs locally on your GPU; rewriting with Claude is optional and only happens when you ask for it.
 
-- **Local transcription** with [Whisper.net](https://github.com/sandrohanea/whisper.net) (whisper.cpp) and the quantized `large-v3-turbo` model, on the GPU through Vulkan: about half a second for a typical sentence.
-- **Optional rewriting with Claude** through the [Claude Code](https://code.claude.com/docs/en/overview) CLI in headless mode, using the Claude subscription already signed in on the machine, with no pay-per-use API key. Pick a prompt: light proofreading, meeting minutes, translation, or your own.
+- **Local transcription**
+  - With [Whisper.net](https://github.com/sandrohanea/whisper.net) (whisper.cpp) and the quantized `large-v3-turbo` model, on the GPU through Vulkan: about half a second for a typical sentence.
+- **Optional rewriting with Claude**
+  - Through the [Claude Code](https://code.claude.com/docs/en/overview) CLI in headless mode, using the Claude subscription already signed in on the machine, with no pay-per-use API key.
+- **Pick a prompt**
+  - Light proofreading, meeting minutes, translation, or your own.
 
 ![The status window while recording](docs/images/overlay-recording.png)
 
