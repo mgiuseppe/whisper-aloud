@@ -22,6 +22,7 @@ internal sealed class SettingsForm : Form
     private readonly KeyCapBox _hotkeySelection = new();
     private readonly NumericUpDown _minRecording = Number(0, 5000, 50);
     private readonly DarkComboBox _uiLanguage = Combo(220);
+    private readonly ToggleSwitch _startWithWindows = new();
 
     private readonly DarkComboBox _microphone = Combo(300);
     private readonly DarkComboBox _gpu = Combo(300);
@@ -74,7 +75,7 @@ internal sealed class SettingsForm : Form
         _toggle.Selected += (_, _) => SelectMode(DictationMode.Toggle);
 
         var pageHost = new Panel { Dock = DockStyle.Fill, BackColor = Window };
-        AddPage(pageHost, T("Dettatura", "Dictation"), T("Come detti, le scorciatoie da tastiera e la lingua dell'app.", "How you dictate, the keyboard shortcuts and the app language."), BuildDictationPage());
+        AddPage(pageHost, T("Dettatura", "Dictation"), T("Come detti, le scorciatoie da tastiera, lingua e avvio dell'app.", "How you dictate, the keyboard shortcuts, the app language and startup."), BuildDictationPage());
         AddPage(pageHost, T("Trascrizione", "Transcription"), T("Microfono e Whisper, il modello che trascrive in locale sulla GPU.", "Microphone and Whisper, the model that transcribes locally on the GPU."), BuildTranscriptionPage());
         AddPage(pageHost, "Claude", T("Riscrittura con i tuoi prompt, solo quando la chiedi.", "Rewriting with your prompts, only when you ask for it."), BuildClaudePage());
         AddPage(pageHost, T("Incolla", "Paste"), T("Cosa succede dopo la trascrizione.", "What happens after the transcription."), BuildPastePage());
@@ -130,8 +131,10 @@ internal sealed class SettingsForm : Form
                 new SettingRow(T("Come cambiarle", "How to change them"),
                     T("Clicca su una scorciatoia e premi la nuova combinazione; Esc annulla. Mentre scegli, le scorciatoie sono sospese.",
                       "Click a shortcut and press the new combination; Esc cancels. While you choose, the shortcuts are suspended."), null)),
-            Section(T("Lingua", "Language")),
+            Section("App"),
             new SettingsCard(
+                new SettingRow(T("Avvia con Windows", "Start with Windows"),
+                    T("Whisper Aloud parte da solo quando accedi a Windows.", "Whisper Aloud starts by itself when you sign in to Windows."), _startWithWindows),
                 new SettingRow(T("Lingua dell'app", "App language"),
                     T("Menu, finestre e prompt di esempio. Cambiandola l'app si riavvia; i tuoi prompt restano come sono.",
                       "Menus, windows and sample prompts. Changing it restarts the app; your prompts stay as they are."), _uiLanguage)),
@@ -331,6 +334,7 @@ internal sealed class SettingsForm : Form
         _uiLanguage.Items.AddRange([new TextChoice("auto", T("Automatica (Windows)", "Automatic (Windows)")),
             new TextChoice("it", "Italiano"), new TextChoice("en", "English")]);
         _uiLanguage.SelectedItem = _uiLanguage.Items.Cast<TextChoice>().FirstOrDefault(c => c.Value == _settings.UiLanguage) ?? _uiLanguage.Items[0];
+        _startWithWindows.Checked = _settings.StartWithWindows;
 
         _microphone.Items.Add(new Choice(-1, T("Predefinito di Windows", "Windows default")));
         foreach (var (index, name) in MicRecorder.ListDevices()) _microphone.Items.Add(new Choice(index, name));
@@ -408,6 +412,7 @@ internal sealed class SettingsForm : Form
         _settings.HotkeyCleanSelection = _hotkeySelection.Text;
         _settings.MinRecordingMs = (int)_minRecording.Value;
         _settings.UiLanguage = ((TextChoice)_uiLanguage.SelectedItem!).Value;
+        _settings.StartWithWindows = _startWithWindows.Checked;
 
         _settings.MicrophoneDevice = ((Choice)_microphone.SelectedItem!).Value;
         _settings.GpuDevice = ((Choice)_gpu.SelectedItem!).Value;

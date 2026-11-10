@@ -58,6 +58,9 @@ public sealed class WhisperAloudSettings
     /// <summary>Le pressioni più brevi di così sono considerate accidentali.</summary>
     public int MinRecordingMs { get; set; } = 300;
 
+    /// <summary>Avvia l'app all'accesso a Windows (chiave Run dell'utente).</summary>
+    public bool StartWithWindows { get; set; }
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,

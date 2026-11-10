@@ -16,4 +16,17 @@
     <SelfContained>false</SelfContained>
   </PropertyGroup>
 
+  <!-- Pubblicazione: i pacchetti di Whisper.net portano le librerie native di ogni sistema; nell'exe per Windows x64
+       restano solo quelle per win-x64 (CPU) e vulkan/win-x64 (GPU). -->
+  <Target Name="TrimForeignRuntimes" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <_PublishPath Include="@(ResolvedFileToPublish)" Path="$([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').Replace('\', '/'))" />
+      <_ForeignRuntime Include="@(_PublishPath)"
+                       Condition="$([System.String]::Copy('%(_PublishPath.Path)').StartsWith('runtimes/'))
+                                  And !$([System.String]::Copy('%(_PublishPath.Path)').StartsWith('runtimes/win-x64/'))
+                                  And !$([System.String]::Copy('%(_PublishPath.Path)').StartsWith('runtimes/vulkan/win-x64/'))" />
+      <ResolvedFileToPublish Remove="@(_ForeignRuntime)" />
+    </ItemGroup>
+  </Target>
+
 </Project>

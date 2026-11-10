@@ -67,6 +67,7 @@ internal sealed class TrayApp : ApplicationContext
 
         AppLog.Info($"avvio, microfono: {MicRecorder.DeviceName(settings.MicrophoneDevice)}");
         RegisterHotkeys();
+        if (settings.StartWithWindows) ApplyAutostart(true); // aggiorna il percorso se l'exe è stato spostato
         StartCleaner();
         _ = LoadTranscriberAsync();
     }
@@ -453,6 +454,8 @@ internal sealed class TrayApp : ApplicationContext
         }
         AppLog.Info($"impostazioni salvate (modalità {updated.Mode}, microfono {MicRecorder.DeviceName(updated.MicrophoneDevice)}, GPU {updated.GpuDevice})");
 
+        if (old.StartWithWindows != updated.StartWithWindows) ApplyAutostart(updated.StartWithWindows);
+
         // La lingua dell'interfaccia vale per menu e finestre già costruiti: si riavvia l'app.
         if (Loc.Resolve(old.UiLanguage) != Loc.Resolve(updated.UiLanguage))
         {
@@ -551,6 +554,19 @@ internal sealed class TrayApp : ApplicationContext
         AppLog.Write(e);
         if (_overlay is not null) _overlay.ShowMessage(T("Errore", "Error"), e.Message);
         else _tray.ShowBalloonTip(5000, Title, e.Message, ToolTipIcon.Error);
+    }
+
+    private void ApplyAutostart(bool enabled)
+    {
+        try
+        {
+            Autostart.Apply(enabled);
+            AppLog.Info($"avvio con Windows: {(enabled ? "attivo" : "spento")}");
+        }
+        catch (Exception e) when (e is UnauthorizedAccessException or System.Security.SecurityException or IOException)
+        {
+            Report(new InvalidOperationException(T($"Avvio con Windows non impostato: {e.Message}", $"Could not set Start with Windows: {e.Message}"), e));
+        }
     }
 
     /// <summary>Avvia una nuova istanza, che aspetta la chiusura di questa prima di partire.</summary>

@@ -25,6 +25,7 @@ The interface is available in English and Italian: see **App language** under [D
   - **Dictate and rewrite with Claude**: dictate, rewrite with the default prompt, paste.
   - **Rewrite the selection**: rewrite the text selected in the active window with the default prompt.
   - If a shortcut is already taken by another app, Whisper Aloud says so and still registers the others.
+- **Start with Windows**: starts Whisper Aloud when you sign in to Windows, through the `Run` key of your user in the registry; no administrator rights needed. If you move the exe, the path is updated at the next start.
 - **App language**: **Automatic (Windows)** uses Italian when Windows is in Italian and English otherwise; or choose **Italiano** or **English**. Changing it restarts the app. The sample prompts are created in the app language on first start; after that they are yours and are not translated.
 - **Minimum press (ms)**: hold mode only; shorter presses are treated as accidental and show a hint instead of recording.
 
@@ -116,6 +117,7 @@ The settings window covers everything most people need. The link **Open settings
 | `HotkeyDictateWithClaude` | `Ctrl+Alt+Shift+D` | |
 | `HotkeyCleanSelection` | `Ctrl+Alt+R` | |
 | `MinRecordingMs` | `300` | hold mode only |
+| `StartWithWindows` | `false` | start the app when you sign in to Windows |
 | `UiLanguage` | `auto` | app language: `auto` (Italian if Windows is in Italian, otherwise English), `it` or `en` |
 | `Language` | `en`, or `it` with the Italian interface | Whisper language code, or `auto` |
 | `WhisperModel` | `ggml-large-v3-turbo-q5_0.bin` | name in the models folder or full path |

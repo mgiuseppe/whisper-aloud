@@ -13,7 +13,7 @@ Thanks for taking a look. This page covers the project layout, how to build, tes
 | Path | Contents |
 |---|---|
 | `src/WhisperAloud.Core` | transcription (`WhisperTranscriber`, `VulkanDevices`), rewriting (`ClaudeCleaner`, `ClaudeProcess`, `CleanupPrompt`, stream-json protocol in `StreamJson`), settings (`WhisperAloudSettings`), data folders (`AppPaths`), latency log |
-| `src/WhisperAloud.App` | WinForms tray app: shortcuts (`Hotkey`, `RegisterHotKey`), recording (`MicRecorder`, NAudio), pasting (`TextInjector`, `SendInput`), status window (`OverlayForm`), settings window (`SettingsForm`), dark theme (`Theme`, `ModernControls`) |
+| `src/WhisperAloud.App` | WinForms tray app: shortcuts (`Hotkey`, `RegisterHotKey`), start with Windows (`Autostart`), recording (`MicRecorder`, NAudio), pasting (`TextInjector`, `SendInput`), status window (`OverlayForm`), settings window (`SettingsForm`), dark theme (`Theme`, `ModernControls`) |
 | `tests/WhisperAloud.Core.Tests` | xUnit tests for the stream-json protocol, prompts, prompt lookup and CLI arguments |
 | `tools/WhisperAloud.Bench` | benchmark of the pipeline on audio files |
 | `samples` | three sentences synthesized with the Windows "Elsa" voice (for Whisper timing) and `trascrizioni.txt` (for rewriting quality and timing) |
@@ -28,7 +28,27 @@ dotnet build WhisperAloud.slnx -c Release
 dotnet run -c Release --project src/WhisperAloud.App
 ```
 
-Only one instance runs at a time: quit the running app from the tray menu (**Esci**) before starting a new build, otherwise the new one exits immediately.
+Only one instance runs at a time: quit the running app from the tray menu (**Quit**) before starting a new build, otherwise the new one exits immediately.
+
+## Release
+
+Pushing a tag that starts with `v` runs the [Release workflow](.github/workflows/release.yml): it runs the tests, publishes a self-contained single-file `WhisperAloud.exe` for Windows x64 and creates a GitHub Release with the exe attached and notes generated from the commits.
+
+```bash
+git tag v1.0.0
+```
+
+```bash
+git push origin v1.0.0
+```
+
+To build the same exe locally:
+
+```bash
+dotnet publish src/WhisperAloud.App -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeAllContentForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=none -o publish
+```
+
+The exe bundles .NET and the Whisper native libraries, keeping only those for `win-x64` (CPU) and `vulkan/win-x64` (GPU); on first start it extracts them to `%TEMP%\.net\WhisperAloud`.
 
 ## Tests
 

@@ -5,7 +5,7 @@ Voice dictation for Windows in the style of Wispr Flow: hold a shortcut, speak, 
 - **Local transcription**
   - With [Whisper.net](https://github.com/sandrohanea/whisper.net) (whisper.cpp) and the quantized `large-v3-turbo` model, on the GPU through Vulkan.
 - **Optional rewriting with Claude**
-  - Light proofreading, meeting notes, translation, or your own.
+  - [Prompts](docs/settings.md#prompts): light proofreading, meeting notes, translation, or your own.
   - Through the [Claude Code](https://code.claude.com/docs/en/overview) CLI in headless mode, using the Claude subscription already signed in on the machine.
 
 ![Dictating an email with Whisper Aloud](docs/images/usage.gif)
@@ -14,17 +14,17 @@ Transcription runs locally on your GPU; rewriting with Claude is optional and on
 
 ## Prerequisites
 
-- Windows 10 or 11, x64, with the [.NET 10 SDK](https://dotnet.microsoft.com/download).
+- Windows 10 or 11, x64.
 - A GPU with a Vulkan driver for fast transcription. Without one Whisper falls back to the CPU and is much slower. On laptops with hybrid graphics the app picks the dedicated GPU automatically: see [latency](docs/latency.md#laptops-with-two-gpus).
 - For rewriting only: [Claude Code](https://code.claude.com/docs/en/overview) installed and signed in (`claude` on the `PATH` or in `%USERPROFILE%\.local\bin`). The app never handles logins or credentials; without Claude Code it still transcribes.
 
 ## Usage
 
-```bash
-dotnet run -c Release --project src/WhisperAloud.App
-```
+Download `WhisperAloud.exe` from the [latest release](https://github.com/mgiuseppe/whisper-aloud/releases/latest) and run it: no installation, and .NET is included. On first start the app downloads the Whisper model (~550 MB) to `%LOCALAPPDATA%\WhisperAloud\models` and creates `%APPDATA%\WhisperAloud\settings.json`. To have it start when you sign in, turn on **Start with Windows** in the settings.
 
-On first start the app downloads the Whisper model (~550 MB) to `%LOCALAPPDATA%\WhisperAloud\models` and creates `%APPDATA%\WhisperAloud\settings.json`.
+The exe is not code-signed, so the first time Windows SmartScreen may say "Windows protected your PC": choose **More info**, then **Run anyway**.
+
+To run it from the source code instead, see [Contributing](CONTRIBUTING.md#build-and-run).
 
 ### Shortcuts
 
@@ -33,8 +33,6 @@ On first start the app downloads the Whisper model (~550 MB) to `%LOCALAPPDATA%\
 | `Ctrl+Alt+D` (hold) | dictate and paste Whisper's transcription as it is |
 | `Ctrl+Alt+Shift+D` (hold) | dictate, rewrite with the default Claude prompt, paste |
 | `Ctrl+Alt+R` | rewrite the selected text with the default prompt and replace it |
-
-Rewriting uses customizable [prompts](docs/settings.md#prompts).
 
 > [!NOTE]
 > Whisper transcribes in the language set in the settings (Italian or English by default, following the app language), not the one it hears. You can set it to `auto` to detect the language from the recording, handy if you switch languages often, but on short dictations it guesses wrong more often: see [Transcription settings](docs/settings.md#transcription).

@@ -1,0 +1,37 @@
+# Release: on every tag v* (e.g. v1.0.0) builds a self-contained single-file exe for Windows x64,
+# runs the tests and publishes a GitHub Release with the exe attached.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Test
+        run: dotnet test tests/WhisperAloud.Core.Tests -c Release
+
+      - name: Publish
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          dotnet publish src/WhisperAloud.App -c Release -r win-x64 --self-contained true `
+            -p:PublishSingleFile=true -p:IncludeAllContentForSelfExtract=true -p:EnableCompressionInSingleFile=true `
+            -p:DebugType=none -p:Version=$version -o publish
+
+      - name: Create release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" publish/WhisperAloud.exe --title "Whisper Aloud ${{ github.ref_name }}" --generate-notes
