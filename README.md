@@ -36,6 +36,9 @@ On first start the app downloads the Whisper model (~550 MB) to `%LOCALAPPDATA%\
 
 Rewriting uses customizable [prompts](docs/settings.md#prompts).
 
+> [!NOTE]
+> Whisper transcribes in the language set in the settings (Italian or English by default, following the app language), not the one it hears. You can set it to `auto` to detect the language from the recording, handy if you switch languages often, but on short dictations it guesses wrong more often: see [Transcription settings](docs/settings.md#transcription).
+
 ## Settings
 
 Double-click the tray icon, or choose **Settings...** from its menu. Four pages cover dictation mode and shortcuts, microphone and GPU, Claude and its prompts, and what happens after the transcription. Changes apply as soon as you press **Save**, without restarting the app.
