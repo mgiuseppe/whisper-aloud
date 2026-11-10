@@ -1,6 +1,6 @@
 # Whisper Aloud
 
-Voice dictation for Windows in the style of Wispr Flow: hold a shortcut, speak, release, and the text appears in the active window. Transcription runs locally on your GPU; rewriting with Claude is optional and only happens when you ask for it.
+Voice dictation for Windows in the style of Wispr Flow: hold a shortcut, speak, release, and the text appears in the active window.
 
 - **Local transcription**
   - With [Whisper.net](https://github.com/sandrohanea/whisper.net) (whisper.cpp) and the quantized `large-v3-turbo` model, on the GPU through Vulkan.
@@ -10,9 +10,7 @@ Voice dictation for Windows in the style of Wispr Flow: hold a shortcut, speak, 
 
 ![Dictating an email with Whisper Aloud](docs/images/usage.gif)
 
-The interface is in English or Italian, following Windows or your choice in the settings.
-
-Whisper's spoken language can be changed in the settings.
+Transcription runs locally on your GPU; rewriting with Claude is optional and only happens when you ask for it.
 
 ## Prerequisites
 
