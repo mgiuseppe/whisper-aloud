@@ -5,9 +5,8 @@ Voice dictation for Windows in the style of Wispr Flow: hold a shortcut, speak, 
 - **Local transcription**
   - With [Whisper.net](https://github.com/sandrohanea/whisper.net) (whisper.cpp) and the quantized `large-v3-turbo` model, on the GPU through Vulkan.
 - **Optional rewriting with Claude**
-  - Through the [Claude Code](https://code.claude.com/docs/en/overview) CLI in headless mode, using the Claude subscription already signed in on the machine.
-- **Pick a prompt**
   - Light proofreading, meeting notes, translation, or your own.
+  - Through the [Claude Code](https://code.claude.com/docs/en/overview) CLI in headless mode, using the Claude subscription already signed in on the machine.
 
 ![Dictating an email with Whisper Aloud](docs/images/usage.gif)
 
