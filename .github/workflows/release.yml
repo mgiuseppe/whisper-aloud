@@ -1,5 +1,5 @@
 # Release: on every tag v* (e.g. v1.0.0) builds a self-contained single-file exe for Windows x64,
-# runs the tests and publishes a GitHub Release with the exe attached.
+# runs the tests and publishes a GitHub Release with the exe attached and the tag message as notes.
 name: Release
 
 on:
@@ -34,4 +34,4 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" publish/WhisperAloud.exe --title "Whisper Aloud ${{ github.ref_name }}" --generate-notes
+        run: gh release create "${{ github.ref_name }}" publish/WhisperAloud.exe --title "Whisper Aloud ${{ github.ref_name }}" --notes-from-tag

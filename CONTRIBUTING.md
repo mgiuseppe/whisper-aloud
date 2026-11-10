@@ -32,23 +32,55 @@ Only one instance runs at a time: quit the running app from the tray menu (**Qui
 
 ## Release
 
-Pushing a tag that starts with `v` runs the [Release workflow](.github/workflows/release.yml): it runs the tests, publishes a self-contained single-file `WhisperAloud.exe` for Windows x64 and creates a GitHub Release with the exe attached and notes generated from the commits.
+A release is a tag `vMAJOR.MINOR.PATCH` with the release notes as its message. Pushing it runs the [Release workflow](.github/workflows/release.yml), which runs the tests, publishes a self-contained single-file `WhisperAloud.exe` for Windows x64 and creates a GitHub Release with the exe attached and the tag message as notes.
 
-```bash
-git tag v1.0.0
-```
+### When
 
-```bash
-git push origin v1.0.0
-```
+Release when something has changed for people who use the app: code in `src` or the workflow. Changes to docs, the README or tests alone need no release, because GitHub shows the README of `main` and the exe would be the same. Group several commits into one release rather than releasing each one.
 
-To build the same exe locally:
+### Version number
+
+- **Patch** (`v1.0.1`): bug fixes only.
+- **Minor** (`v1.1.0`): new features that do not break anything.
+- **Major** (`v2.0.0`): changes that break something, for example a `settings.json` that older settings no longer fit.
+
+### Check the exe first
+
+Build the exe locally and run it from an empty folder before tagging:
 
 ```bash
 dotnet publish src/WhisperAloud.App -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeAllContentForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=none -o publish
 ```
 
+Quit the running app first (only one instance runs at a time), start `publish\WhisperAloud.exe` from another folder and check `%LOCALAPPDATA%\WhisperAloud\app.log`: Whisper must load (`using Vulkan… backend` on a GPU) and no errors may appear. A real dictation is the best check.
+
 The exe bundles .NET and the Whisper native libraries, keeping only those for `win-x64` (CPU) and `vulkan/win-x64` (GPU); on first start it extracts them to `%TEMP%\.net\WhisperAloud`.
+
+### Release notes
+
+Write them for people who use the app, not for developers: what is new, what changed, what was fixed, in a few lines, in English. Group them under bold labels (**New**, **Changed**, **Fixed**) and leave out internal changes. Do not start lines with `#`: git would treat them as comments.
+
+```markdown
+**New**
+- Start with Windows: a switch in the settings starts the app when you sign in.
+
+**Fixed**
+- Long shortcuts are no longer cut off in the status window.
+```
+
+### Tag and push
+
+Save the notes to a file outside the repository, then create an annotated tag on the commit already pushed to `main` and push it:
+
+```bash
+git tag -a v1.1.0 -F notes.md --cleanup=verbatim
+```
+
+```bash
+git push origin v1.1.0
+```
+
+The workflow takes a couple of minutes; the release appears under **Releases** with the exe and the notes.
 
 ## Tests
 
