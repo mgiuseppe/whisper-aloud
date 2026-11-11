@@ -36,6 +36,8 @@ The real cost of rewriting through the `claude` CLI is starting it, not the mode
 
 Numbers vary a lot between runs, depending on the network and the service load. The CLI also ends each turn with an extra request of about 3 s after the answer: the app does not wait for it, takes the text as soon as the `assistant` message arrives and retires the process.
 
+Starting the process on the shortcut press, instead of keeping it running all the time, costs nothing measurable once the dictation lasts about three seconds: in four runs each on 11 November 2026, Sonnet answered with a median of 1.8 s when started at the press with 3 s of dictation, 1.85 s when already started 15 s earlier, and 4.2 s when started only at the rewrite.
+
 Moving the prompt from the system prompt into the message, so that one standby process serves every prompt, did not change the times: Sonnet with the Correzione (Proofread) prompt stayed at a median of 2.0–2.8 s.
 
 ### Quality

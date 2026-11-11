@@ -52,4 +52,16 @@ public class StreamJsonTests
     {
         Assert.Null(StreamJson.Parse(line));
     }
+
+    [Fact]
+    public void Parse_SyntheticErrorAnswer_IsAnErrorNotText()
+    {
+        // Risposta reale della CLI senza accesso: un finto messaggio dell'assistente con il campo error.
+        const string line = """{"type":"assistant","message":{"model":"<synthetic>","role":"assistant","type":"message","content":[{"type":"text","text":"Not logged in · Please run /login"}]},"error":"authentication_failed"}""";
+
+        var parsed = StreamJson.Parse(line);
+
+        var error = Assert.IsType<AssistantError>(parsed);
+        Assert.Equal("authentication_failed", error.Code);
+    }
 }

@@ -66,6 +66,7 @@ async Task<List<long>> MeasureCleanupAsync(ClaudeOptions options, int runs, Time
 {
     var times = new List<long>();
     await using var cleaner = new ClaudeCleaner(options);
+    cleaner.Prepare(); // come alla pressione della scorciatoia
     for (var i = 0; i < runs; i++)
     {
         await Task.Delay(pause);

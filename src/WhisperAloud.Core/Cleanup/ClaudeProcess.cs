@@ -71,6 +71,13 @@ internal sealed class ClaudeProcess
             {
                 case AssistantText assistant:
                     return assistant.Text;
+                case AssistantError { Code: "authentication_failed" }:
+                    throw new ClaudeCliException(Loc.T(
+                        "Claude Code non ha un accesso attivo: apri un terminale, esegui claude e accedi.",
+                        "Claude Code is not signed in: open a terminal, run claude and sign in."), "authentication_failed");
+                case AssistantError other:
+                    throw new ClaudeCliException(Loc.T($"La CLI claude ha risposto con un errore ({other.Code}): {other.Text}",
+                        $"The claude CLI returned an error ({other.Code}): {other.Text}"), other.Code);
                 case TurnResult { IsError: true } error:
                     throw new ClaudeCliException(Loc.T($"La CLI claude ha risposto con un errore ({error.Subtype}): {error.Result}",
                         $"The claude CLI returned an error ({error.Subtype}): {error.Result}"));
@@ -140,4 +147,8 @@ internal sealed class ClaudeProcess
     }
 }
 
-public sealed class ClaudeCliException(string message) : Exception(message);
+public sealed class ClaudeCliException(string message, string? code = null) : Exception(message)
+{
+    /// <summary>Codice dell'errore riportato dalla CLI, se c'è (es. authentication_failed).</summary>
+    public string? Code { get; } = code;
+}

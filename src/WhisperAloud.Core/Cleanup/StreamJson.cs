@@ -38,10 +38,15 @@ public static class StreamJson
         {
             case "assistant":
                 var blocks = node["message"]?["content"]?.AsArray();
-                if (blocks is null) return null;
-                var text = string.Concat(blocks
+                var text = blocks is null ? string.Empty : string.Concat(blocks
                     .Where(b => b?["type"]?.GetValue<string>() == "text")
                     .Select(b => b!["text"]?.GetValue<string>() ?? string.Empty));
+                // Errori come "non hai fatto l'accesso" arrivano come risposta finta dell'assistente, con il campo error:
+                // il testo ("Not logged in · Please run /login") non va mai incollato come se fosse la dettatura.
+                if (node["error"] is JsonValue error && error.TryGetValue<string>(out var code))
+                {
+                    return new AssistantError(code, text);
+                }
                 return text.Length == 0 ? null : new AssistantText(text);
 
             case "result":
@@ -60,5 +65,8 @@ public abstract record StreamEvent;
 
 /// <summary>Testo della risposta: arriva prima del result, che la CLI emette solo a fine turno.</summary>
 public sealed record AssistantText(string Text) : StreamEvent;
+
+/// <summary>Risposta sintetica della CLI per un errore (es. authentication_failed): non è testo del modello.</summary>
+public sealed record AssistantError(string Code, string Text) : StreamEvent;
 
 public sealed record TurnResult(string Result, bool IsError, string Subtype) : StreamEvent;

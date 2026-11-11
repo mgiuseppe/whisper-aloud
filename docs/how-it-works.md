@@ -71,15 +71,20 @@ The **Proofread** prompt (**Correzione** in Italian) allows only minimal edits: 
 
 ### The standby process
 
-Starting the CLI takes a few seconds, more than the model's answer. To avoid paying that at every dictation, the app keeps one `claude` process already started and waiting on stdin:
+Starting the CLI takes a few seconds, more than the model's answer. To avoid paying that at every dictation without keeping a process in memory all day, the app starts `claude` only when it is about to be needed:
 
-1. At a dictation, it sends the message to the standby process and takes the first `assistant` event of the stream-json output. It does not wait for the end of the turn, which brings an extra request of about 3 seconds.
-2. That process is retired straight away: its stdin is closed and it is killed if it has not exited after 60 seconds.
-3. A new standby process is started in the background for the next dictation.
+1. **On the shortcut press.** When you press **Dictate and rewrite with Claude** (or pick a prompt in the status window), the app starts a `claude` process waiting on stdin. The CLI starts up while you speak, so after a dictation of three seconds or more it is ready when you release.
+2. **At the rewrite.** The app sends the message to that process and takes the first `assistant` event of the stream-json output. It does not wait for the end of the turn, which brings an extra request of about 3 seconds.
+3. **Right after.** That process is retired: its stdin is closed and it is killed if it has not exited after 60 seconds. A new standby process starts in the background for the next rewrite.
+4. **After 5 minutes without rewrites** the standby process is closed, so nothing stays in memory while you are not using Claude.
 
-Each process serves exactly one dictation. A single long-lived process would answer slightly faster, but it accumulates the conversation, and later dictations would see the earlier ones. The standby process is also replaced after 20 minutes, and after a change to the Claude settings.
+Each process serves exactly one dictation. A single long-lived process would answer slightly faster, but it accumulates the conversation, and later dictations would see the earlier ones. A change to the Claude settings also closes the standby process.
 
-If the rewrite fails or times out, the raw transcription is pasted and the error is shown in the status window.
+**Rewrite selection** has no dictation to hide the start-up behind: within 5 minutes of a rewrite it uses the standby process, otherwise it starts `claude` on the spot and takes a few seconds longer.
+
+If the rewrite fails or times out, the raw transcription is pasted and the status window says why ("Pasted without Claude"). When Claude Code is not signed in, the CLI does not return an error code: it answers with a synthetic assistant message ("Not logged in · Please run /login") marked with `"error": "authentication_failed"`. The app recognises that field and shows a sign-in hint instead of pasting the message.
+
+If the `claude` executable cannot be found at start, the app does not report an error: it transcribes as usual and explains what is missing only when a Claude shortcut is used. With **Use Claude** off, no `claude` process is started at all.
 
 ## Pasting
 

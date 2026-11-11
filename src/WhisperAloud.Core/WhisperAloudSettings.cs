@@ -107,6 +107,9 @@ public enum DictationMode
 
 public sealed class ClaudeOptions
 {
+    /// <summary>Riscrittura con Claude attiva. Spenta: solo trascrizione, nessun processo claude, scorciatoie di Claude libere.</summary>
+    public bool Enabled { get; set; } = true;
+
     /// <summary>Percorso della CLI; "claude" la cerca nel PATH e in %USERPROFILE%\.local\bin.</summary>
     public string Executable { get; set; } = "claude";
 
@@ -114,13 +117,13 @@ public sealed class ClaudeOptions
     public string Model { get; set; } = "sonnet";
 
     /// <summary>
-    /// Tiene un processo claude già avviato in attesa della prossima dettatura,
-    /// così il costo di avvio della CLI (diversi secondi) non pesa sulla latenza.
+    /// Avvia claude appena si preme la scorciatoia di Claude, così la CLI si avvia mentre si parla, e lo tiene
+    /// pronto per <see cref="KeepWarmMinutes"/> dopo l'ultima riscrittura. Spento: un processo nuovo a ogni riscrittura.
     /// </summary>
     public bool UseWarmProcess { get; set; } = true;
 
-    /// <summary>Dopo questo tempo il processo di riserva viene sostituito da uno nuovo.</summary>
-    public int WarmProcessMaxAgeMinutes { get; set; } = 20;
+    /// <summary>Per quanto il processo pronto resta acceso dopo l'ultima riscrittura; poi si chiude e non occupa memoria.</summary>
+    public int KeepWarmMinutes { get; set; } = 5;
 
     public int TimeoutSeconds { get; set; } = 30;
 

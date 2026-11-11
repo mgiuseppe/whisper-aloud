@@ -43,8 +43,10 @@ The interface is available in English and Italian: see **App language** under [D
 
 ![Claude page](images/settings-claude.png)
 
+- **Use Claude**: on by default. When off, Whisper Aloud only transcribes: no `claude` process runs, the prompt selector and the tray prompt menu disappear, and the two Claude shortcuts are not registered, so other apps can use them. The rest of the page is hidden.
+- **Claude Code not found**: appears when Claude is on but the `claude` CLI cannot be found. The app keeps transcribing; the Claude shortcuts show a short notice instead of recording.
 - **Model**: `sonnet` is the most faithful to the dictated text; `haiku` is faster but sometimes rephrases. See [latency](latency.md#rewriting).
-- **Process ready**: keeps a `claude` process started in the background, so a rewrite takes about 2 seconds instead of 4–5. See [how it works](how-it-works.md#the-standby-process).
+- **Process ready**: starts `claude` as soon as you press the Claude shortcut, so it starts up while you speak, and keeps it ready for 5 minutes after the last rewrite. A rewrite then takes about 2 seconds instead of 4–5, and nothing stays in memory when you are not using Claude. See [how it works](how-it-works.md#the-standby-process).
 - **Timeout (seconds)**: how long to wait for Claude; after that the raw transcription is pasted.
 - **Executable**: `claude` is looked up on the `PATH` and in `%USERPROFILE%\.local\bin`; use a full path for a different installation.
 - **Default prompt**: used by **Dictate and rewrite with Claude** and **Rewrite the selection**.
@@ -128,14 +130,15 @@ The settings window covers everything most people need. The link **Open settings
 | `OverlayLeft` / `OverlayTop` | empty | saved position of the status window; empty means bottom centre |
 | `AppendSpace` | `true` | space after the pasted text |
 | `RestoreClipboard` | `true` | restore the clipboard after pasting |
+| `Claude.Enabled` | `true` | rewriting with Claude on or off |
 | `Claude.Executable` | `claude` | name or full path of the CLI |
 | `Claude.Model` | `sonnet` | any model name accepted by `claude --model` |
-| `Claude.UseWarmProcess` | `true` | keep a `claude` process ready |
-| `Claude.WarmProcessMaxAgeMinutes` | `20` | the standby process is replaced after this time |
+| `Claude.UseWarmProcess` | `true` | start `claude` at the shortcut press and keep it ready between rewrites |
+| `Claude.KeepWarmMinutes` | `5` | how long the ready process stays running after the last rewrite |
 | `Claude.TimeoutSeconds` | `30` | maximum wait for a rewrite |
 | `Claude.Prompts` | four prompts | list of `{ "Name", "Instructions", "Paste" }` |
 | `Claude.SelectedPrompt` | the first prompt | name of the default prompt |
-| `Claude.SystemPrompt` | empty | file only: replaces the general system prompt. It must explain the `<istruzione>` and `<dettato>` tags described in [how it works](how-it-works.md#prompts-and-the-system-prompt) |
+| `Claude.SystemPrompt` | empty | file only: replaces the general system prompt. It must explain the `<istruzione>` and `<dettato>` tags described in [how it works](how-it-works.md#prompts-and-the-system-prompt); a text that mentions neither is ignored, with a note in the diagnostic log |
 
 ## Files and folders
 

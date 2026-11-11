@@ -27,6 +27,9 @@ internal sealed class TrayApp : ApplicationContext
     private readonly ToolStripMenuItem _copyLastItem;
     private string? _lastText;
     private ClaudeCleaner? _cleaner;
+    /// <summary>Perché Claude non è disponibile pur essendo attivo (CLI non trovata); null se va tutto bene o se è spento.</summary>
+    private string? _claudeProblem;
+    private ToolStripMenuItem _promptMenu = null!;
     private WhisperTranscriber? _transcriber;
     private Hotkey? _heldHotkey;
     /// <summary>Prompt di Claude per la dettatura in corso; null = solo trascrizione. Si cambia dalla finestrella.</summary>
@@ -53,7 +56,8 @@ internal sealed class TrayApp : ApplicationContext
         menu.Items.Add(_statusItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_copyLastItem);
-        menu.Items.Add(BuildPromptMenu());
+        menu.Items.Add(_promptMenu = BuildPromptMenu());
+        _promptMenu.Visible = settings.Claude.Enabled;
         menu.Items.Add(BuildMicrophoneMenu());
         menu.Items.Add(T("Impostazioni...", "Settings..."), null, (_, _) => OpenSettings());
         menu.Items.Add(T("Registro latenze", "Latency log"), null, (_, _) => OpenFile(AppPaths.LatencyLog));
@@ -132,11 +136,16 @@ internal sealed class TrayApp : ApplicationContext
         // Ogni scorciatoia si registra per conto suo: se una è già occupata, le altre funzionano lo stesso.
         var errors = new List<string>();
         Register(_settings.HotkeyDictate, hotkey => () => StartDictation(hotkey, cleanup: false));
-        Register(_settings.HotkeyDictateWithClaude, hotkey => () => StartDictation(hotkey, cleanup: true));
-        Register(_settings.HotkeyCleanSelection, ignored => () => _ = CleanSelectionAsync());
+        // Con Claude spento le sue scorciatoie non si registrano: restano libere per le altre app.
+        if (_settings.Claude.Enabled)
+        {
+            Register(_settings.HotkeyDictateWithClaude, hotkey => () => StartDictation(hotkey, cleanup: true));
+            Register(_settings.HotkeyCleanSelection, ignored => () => _ = CleanSelectionAsync());
+        }
         if (errors.Count > 0) Report(new InvalidOperationException(string.Join(Environment.NewLine, errors)));
-        AppLog.Info($"scorciatoie attive: {_settings.HotkeyDictate}, {_settings.HotkeyDictateWithClaude}, " +
-                    $"{_settings.HotkeyCleanSelection}{(errors.Count > 0 ? $" (errori: {errors.Count})" : string.Empty)}");
+        AppLog.Info($"scorciatoie attive: {_settings.HotkeyDictate}" +
+                    (_settings.Claude.Enabled ? $", {_settings.HotkeyDictateWithClaude}, {_settings.HotkeyCleanSelection}" : " (Claude spento)") +
+                    (errors.Count > 0 ? $" (errori: {errors.Count})" : string.Empty));
 
         void Register(string text, Func<Hotkey, Action> handler)
         {
@@ -154,9 +163,25 @@ internal sealed class TrayApp : ApplicationContext
 
     private void StartCleaner()
     {
+        _claudeProblem = null;
+        if (!_settings.Claude.Enabled)
+        {
+            AppLog.Info("claude spento nelle impostazioni");
+            return;
+        }
+        if (!string.IsNullOrWhiteSpace(_settings.Claude.SystemPrompt) && !CleanupPrompt.IsUsableSystem(_settings.Claude.SystemPrompt))
+        {
+            AppLog.Info("Claude.SystemPrompt ignorato: non spiega i tag <istruzione> e <dettato>, uso il prompt di sistema generale");
+        }
         try
         {
             _cleaner = new ClaudeCleaner(_settings.Claude);
+        }
+        catch (FileNotFoundException e)
+        {
+            // Claude Code non installato: si trascrive e basta, senza errori all'avvio. Lo si dice se si usa una scorciatoia di Claude.
+            _claudeProblem = e.Message;
+            AppLog.Info($"claude non trovato: {e.Message}");
         }
         catch (Exception e)
         {
@@ -207,6 +232,11 @@ internal sealed class TrayApp : ApplicationContext
             return;
         }
         if (_busy || _mic.IsRecording) return;
+        if (cleanup && _cleaner is null)
+        {
+            NotifyClaudeUnavailable();
+            return;
+        }
         if (_transcriber is null)
         {
             Notify(T("Non ancora pronta", "Not ready yet"),
@@ -226,16 +256,20 @@ internal sealed class TrayApp : ApplicationContext
 
         _heldHotkey = hotkey;
         _heldPrompt = cleanup && _cleaner is not null ? _settings.Claude.FindPrompt(null).Name : null;
+        // La CLI si avvia mentre si parla: al rilascio è già pronta (o quasi) per la riscrittura.
+        if (_heldPrompt is not null) _cleaner?.Prepare();
         _recording.Restart();
         _tray.Icon = _recordingIcon;
         SetStatus(_heldPrompt is null ? T("In ascolto", "Listening") : T($"In ascolto (Claude: {_heldPrompt})", $"Listening (Claude: {_heldPrompt})"));
         var toggle = _settings.Mode == DictationMode.Toggle;
         _overlay?.ShowRecording(T("In ascolto", "Listening"),
             toggle ? T($"{hotkey.Text} per finire", $"{hotkey.Text} to stop") : T($"rilascia {hotkey.Text}", $"release {hotkey.Text}"), () => _mic.Level,
-            _cleaner is null ? null : _settings.Claude.Prompts.Select(p => p.Name).ToList(), _heldPrompt,
+            // Il selettore dei prompt compare solo con la scorciatoia di Claude: con Detta e incolla non serve.
+            _heldPrompt is null ? null : _settings.Claude.Prompts.Select(p => p.Name).ToList(), _heldPrompt,
             name =>
             {
                 _heldPrompt = name;
+                if (name is not null) _cleaner?.Prepare();
                 AppLog.Info($"prompt scelto per questa dettatura: {name ?? "solo trascrizione"}");
             });
         if (!toggle) _releaseTimer.Start();
@@ -300,6 +334,7 @@ internal sealed class TrayApp : ApplicationContext
             }
 
             var paste = true;
+            string? rewriteError = null;
             if (preset is not null && _cleaner is not null)
             {
                 SetStatus($"Claude: {preset.Name}...");
@@ -309,11 +344,15 @@ internal sealed class TrayApp : ApplicationContext
                 {
                     text = await _cleaner.CleanAsync(text, preset.Instructions);
                     paste = preset.Paste;
-                    AppLog.Info($"claude ({preset.Name}) in {step.ElapsedMilliseconds} ms: {text.Length} caratteri");
+                    AppLog.Info($"claude ({preset.Name}) in {step.ElapsedMilliseconds} ms: {text.Length} caratteri, {_cleaner.LastProcessInfo}");
                 }
                 catch (Exception e) when (e is ClaudeCliException or OperationCanceledException or IOException)
                 {
-                    Report(new InvalidOperationException(T($"Riscrittura non riuscita, incollo la trascrizione grezza. {e.Message}", $"Rewriting failed, pasting the raw transcription. {e.Message}"), e));
+                    // Si incolla comunque la trascrizione; il motivo si mostra dopo, al posto del risultato.
+                    AppLog.Write(e);
+                    rewriteError = e is OperationCanceledException
+                        ? T($"Claude non ha risposto entro {_settings.Claude.TimeoutSeconds} secondi.", $"Claude did not answer within {_settings.Claude.TimeoutSeconds} seconds.")
+                        : e.Message;
                 }
                 cleanMs = step.ElapsedMilliseconds;
             }
@@ -322,7 +361,8 @@ internal sealed class TrayApp : ApplicationContext
             if (paste)
             {
                 await TextInjector.PasteAsync(_settings.AppendSpace ? text + " " : text, _settings.RestoreClipboard);
-                _overlay?.ShowResult(T("Incollato", "Pasted"), $"{total.Elapsed.TotalSeconds:0.0} s", text);
+                if (rewriteError is null) _overlay?.ShowResult(T("Incollato", "Pasted"), $"{total.Elapsed.TotalSeconds:0.0} s", text);
+                else Notify(T("Incollata la trascrizione senza Claude", "Pasted without Claude"), rewriteError);
             }
             else
             {
@@ -353,8 +393,7 @@ internal sealed class TrayApp : ApplicationContext
         if (_busy || _mic.IsRecording) return;
         if (_cleaner is null)
         {
-            Notify(T("Claude non disponibile", "Claude not available"),
-                T("La CLI claude non è stata trovata: controlla l'eseguibile nelle impostazioni.", "The claude CLI was not found: check the executable in the settings."));
+            NotifyClaudeUnavailable();
             return;
         }
 
@@ -483,6 +522,12 @@ internal sealed class TrayApp : ApplicationContext
             StartCleaner();
         }
 
+        if (old.Claude.Enabled != updated.Claude.Enabled)
+        {
+            _promptMenu.Visible = updated.Claude.Enabled;
+            RegisterHotkeys();
+        }
+
         if (old.GpuDevice != updated.GpuDevice || old.Language != updated.Language ||
             old.WhisperModel != updated.WhisperModel || old.WhisperPrompt != updated.WhisperPrompt)
         {
@@ -528,6 +573,13 @@ internal sealed class TrayApp : ApplicationContext
         Clipboard.SetText(_lastText);
         _overlay?.ShowResult(T("Ultima dettatura copiata", "Last dictation copied"), string.Empty, _lastText);
     }
+
+    private void NotifyClaudeUnavailable() =>
+        Notify(T("Claude non disponibile", "Claude not available"),
+            _claudeProblem is null
+                ? T("Claude non è partito: guarda il log errori.", "Claude did not start: see the diagnostic log.")
+                : T("Claude Code non trovato: installalo e accedi, oppure indica il percorso in Impostazioni › Claude › Eseguibile.",
+                    "Claude Code not found: install it and sign in, or set its path in Settings › Claude › Executable."));
 
     /// <summary>Avviso all'utente: nella finestrella se è attiva, altrimenti nel fumetto del tray.</summary>
     private void Notify(string title, string message)

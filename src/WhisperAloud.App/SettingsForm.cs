@@ -1,4 +1,5 @@
 ﻿using WhisperAloud.Core;
+using WhisperAloud.Core.Cleanup;
 using WhisperAloud.Core.Transcription;
 using static WhisperAloud.App.Theme;
 using static WhisperAloud.Core.Loc;
@@ -30,6 +31,11 @@ internal sealed class SettingsForm : Form
     private readonly TextBox _whisperModel = new();
     private readonly TextBox _whisperPrompt = Multiline();
 
+    private readonly ToggleSwitch _useClaude = new();
+    private readonly SettingRow _claudeMissing = new(T("Claude Code non trovato", "Claude Code not found"),
+        T("Installa Claude Code e accedi, oppure indica il percorso in Eseguibile. Finché manca, Whisper Aloud trascrive soltanto.",
+          "Install Claude Code and sign in, or set its path in Executable. Until then, Whisper Aloud only transcribes."), null);
+    private SettingsCard? _claudeMissingCard;
     private readonly DarkComboBox _claudeModel = Combo(160, "sonnet", "haiku", "opus");
     private readonly ToggleSwitch _warmProcess = new();
     private readonly NumericUpDown _timeout = Number(5, 300, 5);
@@ -159,10 +165,19 @@ internal sealed class SettingsForm : Form
     private Page BuildClaudePage()
     {
         _addPrompt.Click += (_, _) => AddPromptEditor(new PromptPreset { Name = T("Nuovo prompt", "New prompt") }, focus: true);
+        _useClaude.CheckedChanged += (_, _) => RefreshClaudePage();
+        _claudeExecutable.Leave += (_, _) => RefreshClaudePage();
+        _claudeMissing.MarkAsWarning();
+        _claudeMissingCard = new SettingsCard(_claudeMissing);
         _claudePage = new Page(
+            new SettingsCard(new SettingRow(T("Usa Claude", "Use Claude"),
+                T("Spento: solo trascrizione, nessun processo claude e scorciatoie di Claude libere per altre app.",
+                  "Off: transcription only, no claude process, and Claude's shortcuts stay free for other apps."), _useClaude)),
+            _claudeMissingCard,
             new SettingsCard(
                 new SettingRow(T("Modello", "Model"), T("sonnet è il più fedele al testo dettato; haiku è più veloce ma a volte riformula.", "sonnet is the most faithful to the dictated text; haiku is faster but sometimes rephrases."), _claudeModel),
-                new SettingRow(T("Processo pronto", "Process ready"), T("Tiene avviato un processo claude: la riscrittura risponde in circa 2 secondi invece di 4-5.", "Keeps a claude process running: a rewrite takes about 2 seconds instead of 4-5."), _warmProcess),
+                new SettingRow(T("Processo pronto", "Process ready"), T("Avvia claude mentre detti e lo tiene pronto per 5 minuti dopo l'ultima riscrittura: risponde in circa 2 secondi invece di 4-5.",
+                  "Starts claude while you dictate and keeps it ready for 5 minutes after the last rewrite: about 2 seconds instead of 4-5."), _warmProcess),
                 new SettingRow(T("Timeout (secondi)", "Timeout (seconds)"), T("Attesa massima della risposta, poi incolla la trascrizione grezza.", "Maximum wait for the answer, then the raw transcription is pasted."), Frame(_timeout, S(110), S(34)))),
             Section(T("Avanzate", "Advanced")),
             new SettingsCard(
@@ -177,6 +192,29 @@ internal sealed class SettingsForm : Form
             // Le schede dei prompt vengono inserite qui, prima del pulsante (vedi AddPromptEditor).
             _addPrompt);
         return _claudePage;
+    }
+
+    /// <summary>Con Claude spento resta solo l'interruttore; l'avviso compare se Claude è acceso ma la CLI non si trova.</summary>
+    private void RefreshClaudePage()
+    {
+        if (_claudePage is null) return;
+        var missing = false;
+        if (_useClaude.Checked)
+        {
+            try
+            {
+                ExecutableResolver.Resolve(string.IsNullOrWhiteSpace(_claudeExecutable.Text) ? "claude" : _claudeExecutable.Text.Trim());
+            }
+            catch (FileNotFoundException)
+            {
+                missing = true;
+            }
+        }
+        foreach (Control item in _claudePage.Items)
+        {
+            if (item == _claudePage.Items[0]) continue;
+            _claudePage.SetHidden(item, item == _claudeMissingCard ? !missing : !_useClaude.Checked);
+        }
     }
 
     private void AddPromptEditor(PromptPreset preset, bool focus = false)
@@ -358,9 +396,11 @@ internal sealed class SettingsForm : Form
         _warmProcess.Checked = _settings.Claude.UseWarmProcess;
         _timeout.Value = Math.Clamp(_settings.Claude.TimeoutSeconds, (int)_timeout.Minimum, (int)_timeout.Maximum);
         _claudeExecutable.Text = _settings.Claude.Executable;
+        _useClaude.Checked = _settings.Claude.Enabled;
         foreach (var preset in _settings.Claude.Prompts) AddPromptEditor(preset);
         var defaultName = _settings.Claude.FindPrompt(null).Name;
         _defaultPrompt.SelectedItem = _promptEditors.FirstOrDefault(e => e.ToString() == defaultName) ?? _promptEditors.FirstOrDefault();
+        RefreshClaudePage();
 
         _appendSpace.Checked = _settings.AppendSpace;
         _restoreClipboard.Checked = _settings.RestoreClipboard;
@@ -389,7 +429,7 @@ internal sealed class SettingsForm : Form
             ShowError(T("Lingua e modello di Whisper non possono essere vuoti.", "Whisper's language and model cannot be empty."), 1);
             return;
         }
-        if (string.IsNullOrWhiteSpace(_claudeModel.Text) || string.IsNullOrWhiteSpace(_claudeExecutable.Text))
+        if (_useClaude.Checked && (string.IsNullOrWhiteSpace(_claudeModel.Text) || string.IsNullOrWhiteSpace(_claudeExecutable.Text)))
         {
             ShowError(T("Modello ed eseguibile di Claude non possono essere vuoti.", "Claude's model and executable cannot be empty."), 2);
             return;
@@ -420,6 +460,7 @@ internal sealed class SettingsForm : Form
         _settings.WhisperModel = _whisperModel.Text.Trim();
         _settings.WhisperPrompt = _whisperPrompt.Text.Trim();
 
+        _settings.Claude.Enabled = _useClaude.Checked;
         _settings.Claude.Model = _claudeModel.Text.Trim();
         _settings.Claude.UseWarmProcess = _warmProcess.Checked;
         _settings.Claude.TimeoutSeconds = (int)_timeout.Value;
@@ -556,6 +597,8 @@ internal sealed class SettingsForm : Form
         // Le schede stanno in un unico contenitore alto quanto il contenuto: lo scorrimento lo gestisce
         // Windows spostando il contenitore, e le posizioni interne non dipendono da quanto si è scorso.
         private readonly Panel _content = new() { BackColor = Window, Location = Point.Empty };
+        // Visible si legge falso finché la pagina è nascosta: gli elementi nascosti si tengono qui.
+        private readonly HashSet<Control> _hidden = [];
         private bool _arranging;
 
         public Page(params Control[] items)
@@ -576,6 +619,13 @@ internal sealed class SettingsForm : Form
 
         /// <summary>Schede e titoletti della pagina, nell'ordine in cui compaiono.</summary>
         public ControlCollection Items => _content.Controls;
+
+        public void SetHidden(Control item, bool hidden)
+        {
+            if (hidden ? !_hidden.Add(item) : !_hidden.Remove(item)) return;
+            item.Visible = !hidden;
+            PerformLayout();
+        }
 
         protected override void OnLayout(LayoutEventArgs levent)
         {
@@ -606,6 +656,7 @@ internal sealed class SettingsForm : Form
             _content.SuspendLayout();
             foreach (Control item in _content.Controls)
             {
+                if (_hidden.Contains(item)) continue;
                 var height = item is SettingsCard card ? card.Arrange(width) : item.Height;
                 if (item is not SettingsCard and not ModernButton) item.Width = width;
                 item.Location = new Point(x, y);

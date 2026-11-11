@@ -41,6 +41,19 @@ public static partial class CleanupPrompt
         Everything else stays as it is: same words, same order, same sentence structure, same register, same language. Do not rephrase, summarise, improve the style, add or remove information, or explain why something happens if the speaker did not say it. When in doubt, keep the original word.
         """;
 
+    /// <summary>
+    /// Prompt di sistema da usare: quello personalizzato solo se spiega i tag &lt;istruzione&gt; e &lt;dettato&gt;,
+    /// altrimenti quello generale. Un testo qualsiasi (es. una vecchia istruzione da minuta) confonderebbe claude
+    /// e lo renderebbe più lento.
+    /// </summary>
+    public static string EffectiveSystem(string? custom) => IsUsableSystem(custom) ? custom! : System;
+
+    /// <summary>Vero se il prompt di sistema personalizzato nomina entrambi i tag del messaggio.</summary>
+    public static bool IsUsableSystem(string? custom) =>
+        !string.IsNullOrWhiteSpace(custom) &&
+        custom.Contains("<istruzione>", StringComparison.OrdinalIgnoreCase) &&
+        custom.Contains("<dettato>", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>Messaggio per claude: istruzione e trascrizione, ciascuna tra i suoi tag.</summary>
     public static string Build(string instructions, string transcript) =>
         $"<istruzione>\n{instructions.Trim()}\n</istruzione>\n\n{Wrap(transcript)}";

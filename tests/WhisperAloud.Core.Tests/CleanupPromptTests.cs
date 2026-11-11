@@ -33,14 +33,6 @@ public class CleanupPromptTests
     }
 
     [Fact]
-    public void BuildArguments_UsesCustomSystemPromptWhenSet()
-    {
-        var args = ClaudeCleaner.BuildArguments(new ClaudeOptions { SystemPrompt = "Solo punteggiatura." });
-
-        Assert.Equal("Solo punteggiatura.", args[args.ToList().IndexOf("--system-prompt") + 1]);
-    }
-
-    [Fact]
     public void Build_PutsInstructionBeforeTranscript()
     {
         var message = CleanupPrompt.Build(" Traduci in inglese. ", "ciao a tutti");
@@ -85,5 +77,17 @@ public class CleanupPromptTests
         Assert.Equal(italian.Select(p => p.Paste), english.Select(p => p.Paste));
         Assert.Equal("Meeting notes", english[1].Name);
         Assert.Equal(CleanupPrompt.CorrectionEnglish, english[0].Instructions);
+    }
+
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("Fai una minuta della registrazione.", false)]
+    [InlineData("Applica <istruzione> al testo in <dettato>.", true)]
+    public void SystemPrompt_CustomUsedOnlyIfItExplainsTheTags(string? custom, bool used)
+    {
+        var args = ClaudeCleaner.BuildArguments(new ClaudeOptions { SystemPrompt = custom });
+
+        var system = args[args.ToList().IndexOf("--system-prompt") + 1];
+        Assert.Equal(used ? custom : CleanupPrompt.System, system);
     }
 }

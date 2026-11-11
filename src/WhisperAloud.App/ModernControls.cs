@@ -391,6 +391,9 @@ internal sealed class SettingRow : Panel
         if (control is not null) Controls.Add(control);
     }
 
+    /// <summary>Titolo in arancione: la riga segnala un problema.</summary>
+    public void MarkAsWarning() => _title.ForeColor = Orange;
+
     /// <summary>Dispone i figli per la larghezza data e restituisce l'altezza necessaria.</summary>
     public int Arrange(int width)
     {
