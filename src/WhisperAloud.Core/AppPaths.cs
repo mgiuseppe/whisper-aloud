@@ -12,6 +12,9 @@ public static class AppPaths
     public static string LatencyLog => Path.Combine(DataDir, "latency.csv");
     public static string AppLog => Path.Combine(DataDir, "app.log");
 
+    /// <summary>Registrazioni salvate (Conserva le registrazioni, o trascrizioni non riuscite).</summary>
+    public static string RecordingsDir => Path.Combine(DataDir, "recordings");
+
     /// <summary>Cartella vuota usata come working directory della CLI claude, così non legge nessun progetto.</summary>
     public static string ClaudeWorkDir => Ensure(Path.Combine(DataDir, "claude-workdir"));
 

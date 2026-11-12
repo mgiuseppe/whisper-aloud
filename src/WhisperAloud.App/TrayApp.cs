@@ -56,6 +56,7 @@ internal sealed class TrayApp : ApplicationContext
         menu.Items.Add(_statusItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_copyLastItem);
+        menu.Items.Add(T("Trascrivi un file audio...", "Transcribe an audio file..."), null, (_, _) => TranscribeFile());
         menu.Items.Add(_promptMenu = BuildPromptMenu());
         _promptMenu.Visible = settings.Claude.Enabled;
         menu.Items.Add(BuildMicrophoneMenu());
@@ -74,6 +75,7 @@ internal sealed class TrayApp : ApplicationContext
         if (settings.StartWithWindows) ApplyAutostart(true); // aggiorna il percorso se l'exe è stato spostato
         StartCleaner();
         _ = LoadTranscriberAsync();
+        _ = Task.Run(DeleteOldRecordings);
     }
 
     /// <summary>Sottomenu per scegliere il microfono; la scelta viene salvata nelle impostazioni.</summary>
@@ -314,6 +316,10 @@ internal sealed class TrayApp : ApplicationContext
             return;
         }
 
+        // Con Conserva le registrazioni si salva subito; altrimenti solo se la trascrizione non riesce.
+        var recordedAt = DateTime.Now;
+        var audioPath = _settings.KeepRecordings ? SaveRecording(samples, recordedAt) : null;
+
         _busy = true;
         _tray.Icon = _workingIcon;
         var total = Stopwatch.StartNew();
@@ -323,13 +329,24 @@ internal sealed class TrayApp : ApplicationContext
             SetStatus(T("Trascrizione...", "Transcribing..."));
             _overlay?.ShowWorking(T("Trascrizione…", "Transcribing…"));
             var step = Stopwatch.StartNew();
-            var text = await Task.Run(() => _transcriber.TranscribeAsync(samples));
+            string text;
+            try
+            {
+                text = await Task.Run(() => _transcriber.TranscribeAsync(samples));
+            }
+            catch (Exception e)
+            {
+                AppLog.Write(e);
+                OfferRetry(samples, audioPath ?? SaveRecording(samples, recordedAt),
+                    T("Trascrizione non riuscita", "Transcription failed"), e.Message);
+                return;
+            }
             transcribeMs = step.ElapsedMilliseconds;
             AppLog.Info($"trascrizione in {transcribeMs} ms: {text.Length} caratteri");
             if (string.IsNullOrWhiteSpace(text))
             {
-                Notify(T("Nessun testo riconosciuto", "No words recognised"),
-                    T("Whisper non ha riconosciuto parole: riprova parlando più vicino al microfono.", "Whisper recognised no words: try again closer to the microphone."));
+                OfferRetry(samples, audioPath ?? SaveRecording(samples, recordedAt), T("Nessun testo riconosciuto", "No words recognised"),
+                    T("Whisper non ha riconosciuto parole.", "Whisper recognised no words."));
                 return;
             }
 
@@ -434,6 +451,113 @@ internal sealed class TrayApp : ApplicationContext
             Remember(cleaned);
             LatencyLog.Append(new LatencySample(DateTimeOffset.Now, "selection", 0, 0, cleanMs,
                 step.ElapsedMilliseconds, total.ElapsedMilliseconds, cleaned.Length));
+        }
+        catch (Exception e)
+        {
+            Report(e);
+        }
+        finally
+        {
+            _busy = false;
+            SetIdle();
+        }
+    }
+
+    /// <summary>Salva l'audio nella cartella delle registrazioni; null se non si riesce (lo dice il log).</summary>
+    private static string? SaveRecording(float[] samples, DateTime recordedAt)
+    {
+        try
+        {
+            var path = Recordings.Save(AppPaths.RecordingsDir, samples, recordedAt);
+            AppLog.Info($"registrazione salvata: {Path.GetFileName(path)}");
+            return path;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Write(e);
+            return null;
+        }
+    }
+
+    private void DeleteOldRecordings()
+    {
+        var days = _settings.RecordingsRetentionDays;
+        var deleted = Recordings.DeleteOlderThan(AppPaths.RecordingsDir, days, DateTime.Now);
+        if (deleted > 0) AppLog.Info($"registrazioni più vecchie di {days} giorni cancellate: {deleted}");
+    }
+
+    /// <summary>Trascrizione non riuscita: l'audio è salvato, si può riprovare subito o più tardi dal menu.</summary>
+    private void OfferRetry(float[] samples, string? audioPath, string title, string reason)
+    {
+        var saved = audioPath is null
+            ? string.Empty
+            : T($" Audio salvato in {Path.GetFileName(audioPath)}: puoi ritrascriverlo anche dopo, dal menu Trascrivi un file audio.",
+                $" Audio saved as {Path.GetFileName(audioPath)}: you can also transcribe it later from the menu, Transcribe an audio file.");
+        if (_overlay is null)
+        {
+            Notify(title, reason + saved);
+            return;
+        }
+        _overlay.ShowMessage(title, reason + saved, T("Riprova", "Try again"),
+            () => _ = TranscribeLaterAsync(() => samples, T("di nuovo", "again")));
+    }
+
+    /// <summary>Voce del menu: sceglie un file audio e ne mostra la trascrizione, senza incollarla.</summary>
+    private void TranscribeFile()
+    {
+        using var dialog = new OpenFileDialog
+        {
+            Title = T("Trascrivi un file audio", "Transcribe an audio file"),
+            Filter = "Audio (*.wav;*.mp3;*.m4a)|*.wav;*.mp3;*.m4a|" + T("Tutti i file", "All files") + " (*.*)|*.*",
+            InitialDirectory = Directory.Exists(AppPaths.RecordingsDir)
+                ? AppPaths.RecordingsDir
+                : Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+        };
+        if (dialog.ShowDialog() != DialogResult.OK) return;
+        var path = dialog.FileName;
+        _ = TranscribeLaterAsync(() => AudioFile.ReadForWhisper(path), Path.GetFileName(path));
+    }
+
+    /// <summary>
+    /// Trascrive audio già registrato (Riprova o un file). Il risultato non si incolla, perché nel frattempo
+    /// la finestra attiva può essere cambiata: resta nella finestrella, pronto da copiare.
+    /// </summary>
+    private async Task TranscribeLaterAsync(Func<float[]> load, string source)
+    {
+        if (_busy || _mic.IsRecording || _transcriber is null)
+        {
+            Notify(T("Un momento", "Just a moment"), _transcriber is null
+                ? T("Il modello Whisper si sta ancora caricando: riprova tra qualche secondo.", "The Whisper model is still loading: try again in a few seconds.")
+                : T("C'è già una dettatura in corso: riprova quando è finita.", "A dictation is in progress: try again when it is over."));
+            return;
+        }
+
+        _busy = true;
+        _tray.Icon = _workingIcon;
+        var total = Stopwatch.StartNew();
+        try
+        {
+            SetStatus(T("Trascrizione...", "Transcribing..."));
+            _overlay?.ShowWorking(T($"Trascrizione {source}…", $"Transcribing {source}…"));
+            var transcriber = _transcriber;
+            var text = await Task.Run(() => transcriber.TranscribeAsync(load()));
+            AppLog.Info($"trascrizione successiva ({source}) in {total.ElapsedMilliseconds} ms: {text.Length} caratteri");
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                Notify(T("Nessun testo riconosciuto", "No words recognised"),
+                    T("Whisper non ha riconosciuto parole nemmeno questa volta.", "Whisper recognised no words this time either."));
+                return;
+            }
+            Remember(text);
+            if (_overlay is not null)
+            {
+                _overlay.ShowResult(T("Trascrizione pronta", "Transcription ready"), $"{total.Elapsed.TotalSeconds:0.0} s", text, sticky: true);
+            }
+            else
+            {
+                Clipboard.SetText(text);
+                _tray.ShowBalloonTip(4000, Title, T("Trascrizione copiata negli appunti.", "Transcription copied to the clipboard."), ToolTipIcon.Info);
+            }
         }
         catch (Exception e)
         {

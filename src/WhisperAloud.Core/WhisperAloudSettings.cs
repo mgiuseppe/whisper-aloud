@@ -36,6 +36,15 @@ public sealed class WhisperAloudSettings
     /// <summary>GPU Vulkan per Whisper (indice come lo elenca Vulkan); -1 sceglie da sola la prima GPU dedicata.</summary>
     public int GpuDevice { get; set; } = -1;
 
+    /// <summary>
+    /// Salva ogni dettatura come WAV in %LOCALAPPDATA%\WhisperAloud\recordings, per ritrascriverla dopo.
+    /// Spento di default: l'audio contiene ciò che si detta. Quando la trascrizione fallisce l'audio si salva comunque.
+    /// </summary>
+    public bool KeepRecordings { get; set; }
+
+    /// <summary>Le registrazioni più vecchie di così si cancellano all'avvio; 0 = non cancellarle mai.</summary>
+    public int RecordingsRetentionDays { get; set; } = 7;
+
     /// <summary>Mostra in primo piano la finestrella di stato (registrazione, trascrizione, testo incollato).</summary>
     public bool ShowOverlay { get; set; } = true;
 

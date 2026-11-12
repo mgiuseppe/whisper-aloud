@@ -29,6 +29,7 @@ Transcription runs locally with [Whisper.net](https://github.com/sandrohanea/whi
 - **Warm-up at start**: the model is loaded once and a second of silence is transcribed right away, so the first real dictation does not pay for the Vulkan pipeline setup.
 - **Silence gate**: recordings whose average energy is below 0.003 are not transcribed, because Whisper tends to invent sentences from silence.
 - **Context sentence**: the `WhisperPrompt` setting is passed as Whisper's initial prompt, which helps with punctuation and recurring words.
+- **Saved recordings**: with **Keep recordings** on, every dictation is written to `%LOCALAPPDATA%\WhisperAloud\recordings` as a mono 16 kHz, 16-bit WAV (about 2 MB a minute) before transcription. If transcription throws an error or recognises no words, the audio is saved even with the option off, and the status window offers **Try again**. **Transcribe an audio file** in the tray menu transcribes a WAV, MP3 or M4A file; the result is shown in the status window and not pasted, because by then the active window may have changed. Recordings older than **Delete after (days)** are deleted at start.
 
 ## Rewriting with Claude
 

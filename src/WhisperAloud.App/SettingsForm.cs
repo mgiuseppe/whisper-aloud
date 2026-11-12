@@ -1,4 +1,5 @@
-﻿using WhisperAloud.Core;
+﻿using System.Diagnostics;
+using WhisperAloud.Core;
 using WhisperAloud.Core.Cleanup;
 using WhisperAloud.Core.Transcription;
 using static WhisperAloud.App.Theme;
@@ -30,6 +31,9 @@ internal sealed class SettingsForm : Form
     private readonly DarkComboBox _language = Combo(140, "it", "en", "fr", "de", "es", "pt", "auto");
     private readonly TextBox _whisperModel = new();
     private readonly TextBox _whisperPrompt = Multiline();
+    private readonly ToggleSwitch _keepRecordings = new();
+    private readonly NumericUpDown _retentionDays = Number(0, 365, 1);
+    private readonly ModernButton _openRecordings = new(T("Apri cartella", "Open folder"));
 
     private readonly ToggleSwitch _useClaude = new();
     private readonly SettingRow _claudeMissing = new(T("Claude Code non trovato", "Claude Code not found"),
@@ -160,7 +164,16 @@ internal sealed class SettingsForm : Form
         new SettingsCard(
             new SettingRow(T("Lingua", "Language"), T("Lingua parlata; auto la riconosce da sola ma sbaglia più spesso.", "Spoken language; auto detects it but makes more mistakes."), _language),
             new SettingRow(T("Modello", "Model"), T($"Nome del file in {AppPaths.ModelsDir} oppure percorso completo.", $"File name in {AppPaths.ModelsDir} or a full path."), Frame(_whisperModel, 0, S(36)), below: true),
-            new SettingRow(T("Contesto", "Context"), T("Aiuta punteggiatura, nomi e termini tecnici ricorrenti.", "Helps with punctuation, names and recurring technical terms."), Frame(_whisperPrompt, 0, S(82), resizable: true), below: true)));
+            new SettingRow(T("Contesto", "Context"), T("Aiuta punteggiatura, nomi e termini tecnici ricorrenti.", "Helps with punctuation, names and recurring technical terms."), Frame(_whisperPrompt, 0, S(82), resizable: true), below: true)),
+        Section(T("Registrazioni", "Recordings")),
+        new SettingsCard(
+            new SettingRow(T("Conserva le registrazioni", "Keep recordings"),
+                T("Salva l'audio di ogni dettatura, da ritrascrivere con Trascrivi un file audio nel menu. Se la trascrizione non riesce, l'audio si salva comunque.",
+                  "Saves the audio of every dictation, to transcribe again with Transcribe an audio file in the menu. If a transcription fails, the audio is saved anyway."), _keepRecordings),
+            new SettingRow(T("Cancella dopo (giorni)", "Delete after (days)"),
+                T("All'avvio si cancellano le registrazioni più vecchie; 0 le tiene per sempre.", "Older recordings are deleted at start; 0 keeps them forever."),
+                Frame(_retentionDays, S(110), S(34))),
+            new SettingRow(T("Cartella", "Folder"), AppPaths.RecordingsDir, _openRecordings)));
 
     private Page BuildClaudePage()
     {
@@ -391,6 +404,13 @@ internal sealed class SettingsForm : Form
         SelectText(_language, _settings.Language);
         _whisperModel.Text = _settings.WhisperModel;
         _whisperPrompt.Text = _settings.WhisperPrompt;
+        _keepRecordings.Checked = _settings.KeepRecordings;
+        _retentionDays.Value = Math.Clamp(_settings.RecordingsRetentionDays, (int)_retentionDays.Minimum, (int)_retentionDays.Maximum);
+        _openRecordings.Click += (_, _) =>
+        {
+            Directory.CreateDirectory(AppPaths.RecordingsDir);
+            Process.Start(new ProcessStartInfo(AppPaths.RecordingsDir) { UseShellExecute = true });
+        };
 
         SelectText(_claudeModel, _settings.Claude.Model);
         _warmProcess.Checked = _settings.Claude.UseWarmProcess;
@@ -459,6 +479,8 @@ internal sealed class SettingsForm : Form
         _settings.Language = _language.Text.Trim();
         _settings.WhisperModel = _whisperModel.Text.Trim();
         _settings.WhisperPrompt = _whisperPrompt.Text.Trim();
+        _settings.KeepRecordings = _keepRecordings.Checked;
+        _settings.RecordingsRetentionDays = (int)_retentionDays.Value;
 
         _settings.Claude.Enabled = _useClaude.Checked;
         _settings.Claude.Model = _claudeModel.Text.Trim();

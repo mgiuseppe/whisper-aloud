@@ -38,6 +38,9 @@ The interface is available in English and Italian: see **App language** under [D
 - **Language**: the spoken language (`it`, `en`, `fr`, `de`, `es`, `pt`) or `auto`, which detects it but makes more mistakes. It is independent of the app language.
 - **Model**: the file name inside the models folder, or a full path to another ggml model.
 - **Context**: a sentence that tells Whisper what to expect. It helps with punctuation and with recurring names or technical terms. Drag the handle at the bottom to enlarge the box.
+- **Keep recordings**: off by default. When on, the audio of every dictation is saved as a WAV file, so you can transcribe it again with **Transcribe an audio file** in the tray menu. When a transcription fails, the audio is saved anyway and the status window offers **Try again**. The files contain what you dictated: they stay on your PC and are never sent anywhere.
+- **Delete after (days)**: recordings older than this are deleted when the app starts; `0` keeps them forever. It applies to the recordings saved after a failure too.
+- **Folder**: where the recordings are, with a button to open it.
 
 ## Claude
 
@@ -91,7 +94,7 @@ The status window follows each dictation without stealing focus, so the text sti
 - **Listening**: a waveform follows your voice, with a warning if the microphone sends no sound, and the prompt selector.
 - **Working**: transcription and rewriting show a running timer.
 - **Done**: the text, the total time and a **Copy** button. It closes after 10 seconds, or stays open while the mouse is over it; results that are not pasted stay until you close them.
-- **Warnings**: press too short, silent microphone, no words recognised, errors.
+- **Warnings**: press too short, silent microphone, no words recognised, errors. When the transcription fails, **Try again** transcribes the saved audio once more.
 
 ![Result pasted into the active window](images/overlay-result.png)
 
@@ -102,6 +105,7 @@ Drag it by its background, title or waveform: the position is saved, and a doubl
 Whisper Aloud lives in the system tray. The icon is grey when idle, red while listening and orange while working. Right-click it for:
 
 - **Copy last dictation**: copies the last dictation again.
+- **Transcribe an audio file...**: transcribes a WAV, MP3 or M4A file, for example a saved recording, and shows the text in the status window, ready to copy.
 - **Claude prompt**: chooses the default prompt.
 - **Microphone**: chooses the microphone.
 - **Settings...**: opens the settings window.
@@ -126,6 +130,8 @@ The settings window covers everything most people need. The link **Open settings
 | `WhisperPrompt` | a sentence in the app language | context for Whisper |
 | `MicrophoneDevice` | `-1` | `-1` is the Windows default device; otherwise the WaveIn device index |
 | `GpuDevice` | `-1` | `-1` picks the first dedicated GPU; otherwise the Vulkan device index |
+| `KeepRecordings` | `false` | save every dictation as a WAV file |
+| `RecordingsRetentionDays` | `7` | delete recordings older than this at start; `0` keeps them forever |
 | `ShowOverlay` | `true` | status window on or off |
 | `OverlayLeft` / `OverlayTop` | empty | saved position of the status window; empty means bottom centre |
 | `AppendSpace` | `true` | space after the pasted text |
@@ -148,4 +154,5 @@ The settings window covers everything most people need. The link **Open settings
 | `%LOCALAPPDATA%\WhisperAloud\models` | Whisper model, downloaded on first start |
 | `%LOCALAPPDATA%\WhisperAloud\latency.csv` | time of every dictation, see [latency](latency.md#latency-log) |
 | `%LOCALAPPDATA%\WhisperAloud\app.log` | diagnostic log: shortcuts, audio level, timings and errors, never the dictated text |
+| `%LOCALAPPDATA%\WhisperAloud\recordings` | saved recordings (WAV), see [Keep recordings](#transcription) |
 | `%LOCALAPPDATA%\WhisperAloud\claude-workdir` | empty working folder for the `claude` CLI |

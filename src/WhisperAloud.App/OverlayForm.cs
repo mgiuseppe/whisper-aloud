@@ -29,6 +29,8 @@ internal sealed partial class OverlayForm : Form
     private readonly Font _textFont = Body(10f);
     private readonly Font _textBold = Strong(10f);
     private string _rawText = string.Empty;
+    /// <summary>Azione del pulsante principale in un avviso (es. Riprova); null = il pulsante copia il testo.</summary>
+    private Action? _action;
     private Point? _dragOffset;
     private bool _dragged;
     private readonly ModernButton _copy = new(Loc.T("Copia", "Copy"), primary: true);
@@ -83,7 +85,16 @@ internal sealed partial class OverlayForm : Form
 
         _picker.Location = new Point(S(18), S(88));
 
-        _copy.Click += (_, _) => CopyText();
+        _copy.Click += (_, _) =>
+        {
+            if (_action is not { } action)
+            {
+                CopyText();
+                return;
+            }
+            _action = null;
+            action();
+        };
         _close.Click += (_, _) => HideNow();
 
         Controls.AddRange([_dot, _title, _detail, _wave, _picker, _textFrame, _copy, _close]);
@@ -150,7 +161,7 @@ internal sealed partial class OverlayForm : Form
     public void ShowResult(string title, string detail, string text, bool sticky = false)
     {
         var plain = SetText(text);
-        _copy.Text = Loc.T("Copia", "Copy");
+        SetButtonText(Loc.T("Copia", "Copy"));
         // La casella cresce con il testo (una minuta è più lunga di una frase), fino a un massimo.
         var measured = TextRenderer.MeasureText(plain, _textFont, new Size(_textFrame.Width - S(34), int.MaxValue),
             TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl).Height;
@@ -158,10 +169,20 @@ internal sealed partial class OverlayForm : Form
         Present(Green, title, detail, Mode.Result, sticky ? 0 : ResultSeconds);
     }
 
-    public void ShowMessage(string title, string message)
+    /// <summary>Avviso; con <paramref name="action"/> mostra un pulsante (es. Riprova) e resta aperto finché non si sceglie.</summary>
+    public void ShowMessage(string title, string message, string? actionText = null, Action? action = null)
     {
         SetText(message);
-        Present(Orange, title, string.Empty, Mode.Message, MessageSeconds);
+        _action = action;
+        if (action is not null) SetButtonText(actionText ?? Loc.T("Riprova", "Try again"));
+        Present(Orange, title, string.Empty, Mode.Message, action is null ? MessageSeconds : 0);
+    }
+
+    /// <summary>Il pulsante principale si allarga per il testo ("Riprova" è più lungo di "Copia").</summary>
+    private void SetButtonText(string text)
+    {
+        _copy.Text = text;
+        _copy.Width = Math.Max(TextRenderer.MeasureText(text, _copy.Font).Width + S(36), S(92));
     }
 
     public void HideNow()
@@ -194,7 +215,8 @@ internal sealed partial class OverlayForm : Form
         if (mode != Mode.Recording) _picker.CloseMenu();
         _textFrame.Visible = mode is Mode.Result or Mode.Message;
         _textFrame.Height = mode == Mode.Message ? S(58) : _resultTextHeight;
-        _copy.Visible = mode == Mode.Result;
+        if (mode != Mode.Message) _action = null;
+        _copy.Visible = mode == Mode.Result || (mode == Mode.Message && _action is not null);
         _close.Visible = mode is Mode.Result or Mode.Message;
         if (mode != Mode.Recording) _levelSource = null;
 
