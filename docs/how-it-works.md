@@ -85,7 +85,9 @@ Each process serves exactly one dictation. A single long-lived process would ans
 
 If the rewrite fails or times out, the raw transcription is pasted and the status window says why ("Pasted without Claude"). When Claude Code is not signed in, the CLI does not return an error code: it answers with a synthetic assistant message ("Not logged in · Please run /login") marked with `"error": "authentication_failed"`. The app recognises that field and shows a sign-in hint instead of pasting the message.
 
-If the `claude` executable cannot be found at start, the app does not report an error: it transcribes as usual and explains what is missing only when a Claude shortcut is used. With **Use Claude** off, no `claude` process is started at all.
+At start, with Claude on, the app runs `claude auth status --json`: it answers in a fraction of a second and sends no request to the model. Only its `loggedIn` field is read; the rest of the output (account, plan) is neither read nor logged. If the CLI cannot be found or is not signed in, the "ready" notice is replaced by a warning that says what to do, while transcription works as usual. The same check runs when you change the Claude settings. After a "not signed in" answer the standby process is closed, since it would give the same answer. With **Use Claude** off, no `claude` process is started at all.
+
+If **Rewrite selection** fails, the clipboard gets back what it held before: the app reads the selection with `Ctrl+C`, so it would otherwise keep the selected text.
 
 ## Pasting
 

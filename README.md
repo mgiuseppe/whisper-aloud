@@ -21,7 +21,7 @@ Hold a shortcut, speak, release: the text appears in the active window.
 
 ## Usage
 
-Download `WhisperAloud.exe` from the [latest release](https://github.com/mgiuseppe/whisper-aloud/releases/latest) and run it: no installation, and .NET is included. On first start the app downloads the Whisper model (~550 MB) to `%LOCALAPPDATA%\WhisperAloud\models` and creates `%APPDATA%\WhisperAloud\settings.json`. To have it start when you sign in, turn on **Start with Windows** in the settings.
+Download `WhisperAloud.exe` from the [latest release](https://github.com/mgiuseppe/whisper-aloud/releases/latest) and run it: no installation, and .NET is included. On first start the app downloads the Whisper model (~550 MB) to `%LOCALAPPDATA%\WhisperAloud\models` and creates `%APPDATA%\WhisperAloud\settings.json`. The app runs in the notification area, next to the clock: starting it again opens the settings. To have it start when you sign in, turn on **Start with Windows** in the settings.
 
 The exe is not code-signed, so the first time Windows SmartScreen may say "Windows protected your PC": choose **More info**, then **Run anyway**.
 

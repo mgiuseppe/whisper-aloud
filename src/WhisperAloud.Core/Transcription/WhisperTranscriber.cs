@@ -1,6 +1,5 @@
 using System.Text;
 using Whisper.net;
-using Whisper.net.Ggml;
 using Whisper.net.LibraryLoader;
 using Whisper.net.Logger;
 
@@ -33,8 +32,8 @@ public sealed class WhisperTranscriber : IAsyncDisposable
     {
         if (!File.Exists(modelPath))
         {
-            progress?.Report(Loc.T("Download del modello Whisper large-v3-turbo (~550 MB)...", "Downloading the Whisper large-v3-turbo model (~550 MB)..."));
-            await DownloadModelAsync(modelPath, cancellationToken).ConfigureAwait(false);
+            progress?.Report(Loc.T("Download del modello Whisper (~550 MB)...", "Downloading the Whisper model (~550 MB)..."));
+            await DownloadModelAsync(modelPath, progress, cancellationToken).ConfigureAwait(false);
         }
 
         RuntimeOptions.RuntimeLibraryOrder = [RuntimeLibrary.Vulkan, RuntimeLibrary.Cpu];
@@ -104,19 +103,41 @@ public sealed class WhisperTranscriber : IAsyncDisposable
         return (float)Math.Sqrt(sum / samples.Length);
     }
 
-    private static async Task DownloadModelAsync(string modelPath, CancellationToken cancellationToken)
+    /// <summary>Indirizzo del modello predefinito su Hugging Face (lo stesso usato dal downloader di Whisper.net).</summary>
+    public const string ModelUrl = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin";
+
+    /// <summary>Scarica il modello in un file .download e lo rinomina solo a fine download, riportando i MB scaricati.</summary>
+    private static async Task DownloadModelAsync(string modelPath, IProgress<string>? progress, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(modelPath)!);
         var partial = modelPath + ".download";
-        await using (var model = await WhisperGgmlDownloader.Default
-                         .GetGgmlModelAsync(GgmlType.LargeV3Turbo, QuantizationType.Q5_0, cancellationToken)
-                         .ConfigureAwait(false))
-        await using (var file = File.Create(partial))
+        using (var http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan })
+        using (var response = await http.GetAsync(ModelUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false))
         {
-            await model.CopyToAsync(file, cancellationToken).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            var total = response.Content.Headers.ContentLength;
+            await using var source = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            await using var file = File.Create(partial);
+            var buffer = new byte[1 << 20];
+            long done = 0, lastReportedMb = -1;
+            int read;
+            while ((read = await source.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+            {
+                await file.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                done += read;
+                var mb = done >> 20;
+                if (progress is null || mb - lastReportedMb < 5) continue; // un aggiornamento ogni 5 MB basta
+                lastReportedMb = mb;
+                progress.Report(DownloadStatus(mb, total is { } t ? t >> 20 : null));
+            }
         }
         File.Move(partial, modelPath, overwrite: true);
     }
+
+    /// <summary>Testo di avanzamento del download, es. "Download del modello Whisper: 230 / 548 MB (42%)".</summary>
+    public static string DownloadStatus(long doneMb, long? totalMb) => totalMb is > 0 and var total
+        ? Loc.T($"Download del modello Whisper: {doneMb} / {total} MB ({doneMb * 100 / total}%)", $"Downloading the Whisper model: {doneMb} / {total} MB ({doneMb * 100 / total}%)")
+        : Loc.T($"Download del modello Whisper: {doneMb} MB", $"Downloading the Whisper model: {doneMb} MB");
 
     public async ValueTask DisposeAsync()
     {

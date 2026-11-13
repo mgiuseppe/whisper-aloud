@@ -14,7 +14,7 @@ internal static class Autostart
     public static void Apply(bool enabled)
     {
         using var key = Registry.CurrentUser.CreateSubKey(RunKey);
-        if (enabled) key.SetValue(ValueName, $"\"{Environment.ProcessPath}\"");
+        if (enabled) key.SetValue(ValueName, $"\"{Environment.ProcessPath}\" {Program.AutostartArgument}");
         else if (key.GetValue(ValueName) is not null) key.DeleteValue(ValueName);
     }
 }

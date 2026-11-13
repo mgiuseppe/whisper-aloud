@@ -36,10 +36,20 @@ internal sealed class TrayApp : ApplicationContext
     private string? _heldPrompt;
     private readonly Stopwatch _recording = new();
     private bool _busy;
+    /// <summary>Avvio con Windows: niente avviso di avvio, l'app resta discreta nel tray.</summary>
+    private readonly bool _quiet;
+    private readonly RegisteredWaitHandle _showRequestWait;
+    /// <summary>Controllo dell'accesso a Claude Code avviato con il cleaner; null se Claude è spento o manca.</summary>
+    private Task<bool?>? _signInCheck;
+    /// <summary>Stato del caricamento di Whisper (es. avanzamento del download), per chi preme una scorciatoia nel frattempo.</summary>
+    private string? _loadingStatus;
 
-    public TrayApp(WhisperAloudSettings settings)
+    /// <param name="showRequest">Segnalato da una seconda istanza: si aprono le impostazioni.</param>
+    /// <param name="quiet">Avvio con Windows: nessun avviso all'avvio.</param>
+    public TrayApp(WhisperAloudSettings settings, WaitHandle showRequest, bool quiet)
     {
         _settings = settings;
+        _quiet = quiet;
         _mic = new MicRecorder(settings.MicrophoneDevice);
         _overlay = settings.ShowOverlay ? CreateOverlay() : null;
         _copyLastItem = new ToolStripMenuItem(T("Copia ultima dettatura", "Copy last dictation"), null, (_, _) => CopyLast()) { Enabled = false };
@@ -68,6 +78,9 @@ internal sealed class TrayApp : ApplicationContext
 
         _tray = new NotifyIcon { Icon = _workingIcon, Text = Title, ContextMenuStrip = menu, Visible = true };
         _tray.DoubleClick += (_, _) => OpenSettings();
+        var ui = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
+        _showRequestWait = ThreadPool.RegisterWaitForSingleObject(showRequest,
+            (_, _) => ui.Post(_ => OpenSettings(), null), null, Timeout.Infinite, executeOnlyOnce: false);
         _releaseTimer.Tick += OnReleaseTick;
 
         AppLog.Info($"avvio, microfono: {MicRecorder.DeviceName(settings.MicrophoneDevice)}");
@@ -166,6 +179,7 @@ internal sealed class TrayApp : ApplicationContext
     private void StartCleaner()
     {
         _claudeProblem = null;
+        _signInCheck = null;
         if (!_settings.Claude.Enabled)
         {
             AppLog.Info("claude spento nelle impostazioni");
@@ -178,6 +192,7 @@ internal sealed class TrayApp : ApplicationContext
         try
         {
             _cleaner = new ClaudeCleaner(_settings.Claude);
+            _signInCheck = CheckSignInAsync(_settings.Claude.Executable);
         }
         catch (FileNotFoundException e)
         {
@@ -194,31 +209,98 @@ internal sealed class TrayApp : ApplicationContext
 
     private async Task LoadTranscriberAsync()
     {
-        var progress = new Progress<string>(SetStatus);
+        // All'avvio la finestrella dice che l'app sta partendo: senza, l'unico segno è l'icona nel tray.
+        // Il download del modello (prima volta) si mostra anche con l'avvio silenzioso di Windows: dura minuti.
+        var downloading = !File.Exists(_settings.ResolveModelPath());
+        var announce = !_quiet || downloading;
+        var progress = new Progress<string>(status =>
+        {
+            _loadingStatus = status;
+            SetStatus(status);
+            if (announce && _transcriber is null) _overlay?.UpdateWorking(status);
+        });
         try
         {
             _transcriber = await Task.Run(() => WhisperTranscriber.CreateAsync(
                 _settings.ResolveModelPath(), _settings.Language, _settings.WhisperPrompt, progress,
                 _settings.GpuDevice, message => AppLog.Info($"whisper: {message}")));
+            _loadingStatus = null;
             SetIdle();
-            _tray.ShowBalloonTip(3000, Title,
-                T($"Pronta ({WhisperTranscriber.LoadedRuntime}). Tieni premuto {_settings.HotkeyDictate} per dettare.",
-                    $"Ready ({WhisperTranscriber.LoadedRuntime}). Hold {_settings.HotkeyDictate} to dictate."),
-                ToolTipIcon.Info);
+            await ShowStartupNoticeAsync(announce);
         }
-        catch (HttpRequestException e)
+        // Rete assente o caduta a metà download (SocketException dentro una IOException), disco pieno:
+        // si spiega come riprovare invece di mostrare solo l'errore di sistema.
+        catch (Exception e) when (downloading && e is HttpRequestException or IOException)
         {
+            _loadingStatus = null;
             SetStatus(T("Modello Whisper non scaricato", "Whisper model not downloaded"));
             Report(new InvalidOperationException(
-                T($"Download del modello Whisper non riuscito (rete). Riavvia l'app per riprovare, oppure scarica " +
+                T($"Download del modello Whisper non riuscito ({e.Message}). Riavvia l'app per riprovare, oppure scarica " +
                   $"ggml-large-v3-turbo-q5_0.bin da huggingface.co/ggerganov/whisper.cpp in {AppPaths.ModelsDir}.",
-                  $"Could not download the Whisper model (network). Restart the app to try again, or download " +
+                  $"Could not download the Whisper model ({e.Message}). Restart the app to try again, or download " +
                   $"ggml-large-v3-turbo-q5_0.bin from huggingface.co/ggerganov/whisper.cpp into {AppPaths.ModelsDir}."), e));
         }
         catch (Exception e)
         {
+            _loadingStatus = null;
             SetStatus(T("Whisper non disponibile", "Whisper not available"));
             Report(e);
+        }
+    }
+
+    /// <summary>
+    /// Dice che l'app è partita, dove si trova e come si detta. Se Claude è attivo ma non utilizzabile (CLI mancante
+    /// o senza accesso) lo dice al suo posto, anche con l'avvio silenzioso: è qualcosa da sistemare.
+    /// </summary>
+    private async Task ShowStartupNoticeAsync(bool announce)
+    {
+        if (await ClaudeWarningAsync() is { } warning)
+        {
+            Notify(T("Pronta, ma senza Claude", "Ready, but without Claude"), warning);
+            return;
+        }
+        if (!announce) return;
+
+        var hold = _settings.Mode == DictationMode.Toggle ? T("Premi", "Press") : T("Tieni premuto", "Hold");
+        var message = _cleaner is null
+            ? T($"{hold} {_settings.HotkeyDictate} per dettare. L'icona è vicino all'orologio: doppio clic per le impostazioni.",
+                $"{hold} {_settings.HotkeyDictate} to dictate. The icon is next to the clock: double-click it for the settings.")
+            : T($"{hold} {_settings.HotkeyDictate} per dettare, {_settings.HotkeyDictateWithClaude} per riscrivere anche con Claude. L'icona è vicino all'orologio: doppio clic per le impostazioni.",
+                $"{hold} {_settings.HotkeyDictate} to dictate, {_settings.HotkeyDictateWithClaude} to also rewrite with Claude. The icon is next to the clock: double-click it for the settings.");
+        if (_overlay is not null) _overlay.ShowNotice(T("Whisper Aloud è pronta", "Whisper Aloud is ready"), message);
+        else _tray.ShowBalloonTip(5000, T("Whisper Aloud è pronta", "Whisper Aloud is ready"), message, ToolTipIcon.Info);
+    }
+
+    /// <summary>Perché Claude, pur attivo, non si può usare (CLI non trovata o senza accesso); null se va tutto bene o è spento.</summary>
+    private async Task<string?> ClaudeWarningAsync()
+    {
+        if (!_settings.Claude.Enabled) return null;
+        if (_claudeProblem is not null)
+        {
+            return T($"Claude Code non trovato: installalo e accedi, oppure indica il percorso in Impostazioni › Claude › Eseguibile. Intanto {_settings.HotkeyDictate} trascrive normalmente.",
+                $"Claude Code not found: install it and sign in, or set its path in Settings › Claude › Executable. Meanwhile {_settings.HotkeyDictate} transcribes as usual.");
+        }
+        if (_signInCheck is not null && await _signInCheck == false)
+        {
+            return T($"Claude Code non ha un accesso attivo: apri un terminale, esegui claude e accedi. Intanto {_settings.HotkeyDictate} trascrive normalmente.",
+                $"Claude Code is not signed in: open a terminal, run claude and sign in. Meanwhile {_settings.HotkeyDictate} transcribes as usual.");
+        }
+        return null;
+    }
+
+    /// <summary>claude auth status: nessuna richiesta al modello; nel log va solo l'esito.</summary>
+    private static async Task<bool?> CheckSignInAsync(string executable)
+    {
+        try
+        {
+            var signedIn = await Task.Run(() => ClaudeAuth.IsSignedInAsync(executable, AppPaths.ClaudeWorkDir));
+            AppLog.Info($"claude: accesso {signedIn switch { true => "attivo", false => "non attivo", null => "non verificato" }}");
+            return signedIn;
+        }
+        catch (Exception e)
+        {
+            AppLog.Info($"claude: accesso non verificato ({e.Message})");
+            return null;
         }
     }
 
@@ -241,8 +323,10 @@ internal sealed class TrayApp : ApplicationContext
         }
         if (_transcriber is null)
         {
-            Notify(T("Non ancora pronta", "Not ready yet"),
-                T("Il modello Whisper si sta ancora caricando: riprova tra qualche secondo.", "The Whisper model is still loading: try again in a few seconds."));
+            // Durante il download si dice a che punto è; la finestrella del download torna quando l'avviso si chiude.
+            Notify(T("Non ancora pronta", "Not ready yet"), _loadingStatus is { } status && status.Contains("MB")
+                ? T($"{status}. Si potrà dettare a download finito.", $"{status}. You can dictate once the download is done.")
+                : T("Il modello Whisper si sta ancora caricando: riprova tra qualche secondo.", "The Whisper model is still loading: try again in a few seconds."));
             return;
         }
 
@@ -433,7 +517,17 @@ internal sealed class TrayApp : ApplicationContext
             SetStatus(T($"Claude: {preset.Name} sulla selezione...", $"Claude: {preset.Name} on the selection..."));
             _overlay?.ShowWorking(T($"Claude · {preset.Name} sulla selezione…", $"Claude · {preset.Name} on the selection…"));
             var step = Stopwatch.StartNew();
-            var cleaned = await _cleaner.CleanAsync(selection, preset.Instructions);
+            string cleaned;
+            try
+            {
+                cleaned = await _cleaner.CleanAsync(selection, preset.Instructions);
+            }
+            catch
+            {
+                // Per leggere la selezione si è usato Ctrl+C: se Claude fallisce gli appunti tornano com'erano.
+                TextInjector.Restore(original);
+                throw;
+            }
             var cleanMs = step.ElapsedMilliseconds;
 
             step.Restart();
@@ -644,6 +738,8 @@ internal sealed class TrayApp : ApplicationContext
             _cleaner = null;
             if (previous is not null) _ = previous.DisposeAsync().AsTask();
             StartCleaner();
+            // Claude appena acceso o con un altro eseguibile: si dice subito se non si può usare.
+            if (await ClaudeWarningAsync() is { } warning) Notify(T("Claude non disponibile", "Claude not available"), warning);
         }
 
         if (old.Claude.Enabled != updated.Claude.Enabled)
@@ -761,6 +857,7 @@ internal sealed class TrayApp : ApplicationContext
 
     protected override void ExitThreadCore()
     {
+        _showRequestWait.Unregister(null);
         _releaseTimer.Dispose();
         _hotkeys.Dispose();
         _mic.Dispose();

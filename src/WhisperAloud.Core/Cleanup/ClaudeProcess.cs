@@ -74,7 +74,7 @@ internal sealed class ClaudeProcess
                 case AssistantError { Code: "authentication_failed" }:
                     throw new ClaudeCliException(Loc.T(
                         "Claude Code non ha un accesso attivo: apri un terminale, esegui claude e accedi.",
-                        "Claude Code is not signed in: open a terminal, run claude and sign in."), "authentication_failed");
+                        "Claude Code is not signed in: open a terminal, run claude and sign in."), ClaudeAuth.NotSignedInCode);
                 case AssistantError other:
                     throw new ClaudeCliException(Loc.T($"La CLI claude ha risposto con un errore ({other.Code}): {other.Text}",
                         $"The claude CLI returned an error ({other.Code}): {other.Text}"), other.Code);

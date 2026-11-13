@@ -44,6 +44,7 @@ internal sealed partial class OverlayForm : Form
     private string _recordingTitle = string.Empty;
     private Mode _mode;
     private int _resultTextHeight;
+    private int _messageTextHeight;
 
     public OverlayForm()
     {
@@ -163,20 +164,42 @@ internal sealed partial class OverlayForm : Form
         var plain = SetText(text);
         SetButtonText(Loc.T("Copia", "Copy"));
         // La casella cresce con il testo (una minuta è più lunga di una frase), fino a un massimo.
-        var measured = TextRenderer.MeasureText(plain, _textFont, new Size(_textFrame.Width - S(34), int.MaxValue),
-            TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl).Height;
-        _resultTextHeight = Math.Clamp(measured + S(24), S(64), S(340));
+        _resultTextHeight = Math.Clamp(MeasureTextHeight(plain) + S(24), S(64), S(340));
         Present(Green, title, detail, Mode.Result, sticky ? 0 : ResultSeconds);
     }
 
     /// <summary>Avviso; con <paramref name="action"/> mostra un pulsante (es. Riprova) e resta aperto finché non si sceglie.</summary>
     public void ShowMessage(string title, string message, string? actionText = null, Action? action = null)
     {
-        SetText(message);
+        _messageTextHeight = MessageHeight(SetText(message));
         _action = action;
         if (action is not null) SetButtonText(actionText ?? Loc.T("Riprova", "Try again"));
         Present(Orange, title, string.Empty, Mode.Message, action is null ? MessageSeconds : 0);
     }
+
+    /// <summary>
+    /// Aggiorna il testo del lavoro in corso (es. avanzamento del download) senza azzerare il contatore.
+    /// Se la finestrella mostra un avviso lo lascia finché non si chiude; se è nascosta la riapre.
+    /// </summary>
+    public void UpdateWorking(string title)
+    {
+        if (Visible && _mode == Mode.Working) _title.Text = title;
+        else if (!Visible) ShowWorking(title);
+    }
+
+    /// <summary>Avviso positivo (es. app pronta all'avvio): punto verde, si chiude da solo.</summary>
+    public void ShowNotice(string title, string message)
+    {
+        _messageTextHeight = MessageHeight(SetText(message));
+        _action = null;
+        Present(Green, title, string.Empty, Mode.Message, MessageSeconds);
+    }
+
+    private int MeasureTextHeight(string plain) => TextRenderer.MeasureText(plain, _textFont,
+        new Size(_textFrame.Width - S(34), int.MaxValue), TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl).Height;
+
+    /// <summary>Gli avvisi occupano almeno due righe e crescono se il testo è più lungo (es. in italiano).</summary>
+    private int MessageHeight(string plain) => Math.Clamp(MeasureTextHeight(plain) + S(22), S(58), S(160));
 
     /// <summary>Il pulsante principale si allarga per il testo ("Riprova" è più lungo di "Copia").</summary>
     private void SetButtonText(string text)
@@ -214,7 +237,7 @@ internal sealed partial class OverlayForm : Form
         _picker.Visible = showPicker;
         if (mode != Mode.Recording) _picker.CloseMenu();
         _textFrame.Visible = mode is Mode.Result or Mode.Message;
-        _textFrame.Height = mode == Mode.Message ? S(58) : _resultTextHeight;
+        _textFrame.Height = mode == Mode.Message ? _messageTextHeight : _resultTextHeight;
         if (mode != Mode.Message) _action = null;
         _copy.Visible = mode == Mode.Result || (mode == Mode.Message && _action is not null);
         _close.Visible = mode is Mode.Result or Mode.Message;

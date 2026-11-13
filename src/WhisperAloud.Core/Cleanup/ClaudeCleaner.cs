@@ -99,6 +99,12 @@ public sealed class ClaudeCleaner : IAsyncDisposable
             var response = await process.AskAsync(CleanupPrompt.Build(instructions, transcript), timeout.Token).ConfigureAwait(false);
             return CleanupPrompt.Unwrap(response);
         }
+        catch (ClaudeCliException e) when (e.Code == ClaudeAuth.NotSignedInCode)
+        {
+            // Senza accesso anche la riserva risponderebbe allo stesso modo: inutile tenerla in memoria.
+            DropSpare();
+            throw;
+        }
         finally
         {
             process.Retire();
@@ -130,6 +136,15 @@ public sealed class ClaudeCleaner : IAsyncDisposable
             LastProcessInfo = $"riserva avviata da {process.Age.TotalSeconds:0.0} s";
         }
         return process;
+    }
+
+    private void DropSpare()
+    {
+        lock (_lock)
+        {
+            _spare?.Retire();
+            _spare = null;
+        }
     }
 
     private void ReplenishSpare()

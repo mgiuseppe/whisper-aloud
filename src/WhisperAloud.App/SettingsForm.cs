@@ -74,7 +74,7 @@ internal sealed class SettingsForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         MaximizeBox = false;
         MinimizeBox = false;
-        ShowIcon = false;
+        Icon = TrayIcons.App; // senza, la barra delle applicazioni mostra un'icona vuota
 
         foreach (var box in new[] { _hotkeyDictate, _hotkeyClaude, _hotkeySelection })
         {

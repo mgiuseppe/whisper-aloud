@@ -25,7 +25,7 @@ The interface is available in English and Italian: see **App language** under [D
   - **Dictate and rewrite with Claude**: dictate, rewrite with the default prompt, paste.
   - **Rewrite the selection**: rewrite the text selected in the active window with the default prompt.
   - If a shortcut is already taken by another app, Whisper Aloud says so and still registers the others.
-- **Start with Windows**: starts Whisper Aloud when you sign in to Windows, through the `Run` key of your user in the registry; no administrator rights needed. If you move the exe, the path is updated at the next start.
+- **Start with Windows**: starts Whisper Aloud when you sign in to Windows, through the `Run` key of your user in the registry; no administrator rights needed. If you move the exe, the path is updated at the next start. Started this way, the app starts quietly, without the "ready" notice.
 - **App language**: **Automatic (Windows)** uses Italian when Windows is in Italian and English otherwise; or choose **Italiano** or **English**. Changing it restarts the app. The sample prompts are created in the app language on first start; after that they are yours and are not translated.
 - **Minimum press (ms)**: hold mode only; shorter presses are treated as accidental and show a hint instead of recording.
 
@@ -47,7 +47,7 @@ The interface is available in English and Italian: see **App language** under [D
 ![Claude page](images/settings-claude.png)
 
 - **Use Claude**: on by default. When off, Whisper Aloud only transcribes: no `claude` process runs, the prompt selector and the tray prompt menu disappear, and the two Claude shortcuts are not registered, so other apps can use them. The rest of the page is hidden.
-- **Claude Code not found**: appears when Claude is on but the `claude` CLI cannot be found. The app keeps transcribing; the Claude shortcuts show a short notice instead of recording.
+- **Claude Code not found**: appears when Claude is on but the `claude` CLI cannot be found. The app keeps transcribing; the Claude shortcuts show a short notice instead of recording. At start, the app also warns when Claude Code is installed but not signed in.
 - **Model**: `sonnet` is the most faithful to the dictated text; `haiku` is faster but sometimes rephrases. See [latency](latency.md#rewriting).
 - **Process ready**: starts `claude` as soon as you press the Claude shortcut, so it starts up while you speak, and keeps it ready for 5 minutes after the last rewrite. A rewrite then takes about 2 seconds instead of 4–5, and nothing stays in memory when you are not using Claude. See [how it works](how-it-works.md#the-standby-process).
 - **Timeout (seconds)**: how long to wait for Claude; after that the raw transcription is pasted.
@@ -91,6 +91,7 @@ The status window follows each dictation without stealing focus, so the text sti
 
 ![Status window while listening](images/overlay-recording.png)
 
+- **Starting**: when you start the app, the status window shows the model loading, then says the app is ready, gives both dictation shortcuts and says where the tray icon is. If Claude is on but not installed or not signed in, it says so instead. The first time, it shows the download of the model in megabytes, even with **Start with Windows**; pressing a shortcut meanwhile says how far the download has got. Starting the exe again while the app is running opens the settings.
 - **Listening**: a waveform follows your voice, with a warning if the microphone sends no sound, and the prompt selector.
 - **Working**: transcription and rewriting show a running timer.
 - **Done**: the text, the total time and a **Copy** button. It closes after 10 seconds, or stays open while the mouse is over it; results that are not pasted stay until you close them.

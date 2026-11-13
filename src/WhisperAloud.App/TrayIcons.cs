@@ -5,6 +5,9 @@ namespace WhisperAloud.App;
 /// <summary>Icone disegnate a runtime: cerchio colorato (grigio a riposo, rosso in ascolto, arancio al lavoro) con un microfono.</summary>
 internal static class TrayIcons
 {
+    /// <summary>Icona dell'app (microfono su viola), per le finestre e la barra delle applicazioni.</summary>
+    public static Icon App { get; } = new(typeof(TrayIcons).Assembly.GetManifestResourceStream("WhisperAloud.app.ico")!);
+
     public static Icon Circle(Color color)
     {
         using var bitmap = new Bitmap(32, 32);

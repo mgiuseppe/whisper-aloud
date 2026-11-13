@@ -14,7 +14,13 @@
     <AssemblyName>WhisperAloud</AssemblyName>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>false</SelfContained>
+    <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Icona dell'exe (Esplora file) e delle finestre (barra delle applicazioni). -->
+    <EmbeddedResource Include="app.ico" LogicalName="WhisperAloud.app.ico" />
+  </ItemGroup>
 
   <!-- Pubblicazione: i pacchetti di Whisper.net portano le librerie native di ogni sistema; nell'exe per Windows x64
        restano solo quelle per win-x64 (CPU) e vulkan/win-x64 (GPU). -->

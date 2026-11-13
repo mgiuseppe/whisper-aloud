@@ -7,6 +7,12 @@ internal static class Program
     /// <summary>Passato dall'istanza che si riavvia: si aspetta che chiuda invece di uscire subito.</summary>
     public const string RestartArgument = "--restart";
 
+    /// <summary>Passato dalla chiave Run di Windows: all'accesso l'app parte in silenzio, senza avviso.</summary>
+    public const string AutostartArgument = "--autostart";
+
+    /// <summary>Segnale con cui una seconda istanza chiede a quella attiva di aprire le impostazioni.</summary>
+    private const string ShowEventName = @"Local\WhisperAloud.Show";
+
     [STAThread]
     private static void Main(string[] args)
     {
@@ -20,7 +26,16 @@ internal static class Program
         {
             owned = true; // l'istanza precedente è uscita senza rilasciarlo
         }
-        if (!owned) return;
+        if (!owned)
+        {
+            // Già attiva (magari non si vede, è nel tray): invece di non fare niente, apre le sue impostazioni.
+            if (EventWaitHandle.TryOpenExisting(ShowEventName, out var running))
+            {
+                using (running) running.Set();
+            }
+            return;
+        }
+        using var showRequest = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName);
 
         ApplicationConfiguration.Initialize();
 #pragma warning disable WFO5001 // modalità scura di WinForms: ancora sperimentale, ma copre elenchi a discesa e campi numerici
@@ -41,6 +56,6 @@ internal static class Program
             return;
         }
 
-        Application.Run(new TrayApp(settings));
+        Application.Run(new TrayApp(settings, showRequest, quiet: args.Contains(AutostartArgument)));
     }
 }
