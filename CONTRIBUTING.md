@@ -12,9 +12,9 @@ Thanks for taking a look. This page covers the project layout, how to build, tes
 
 | Path | Contents |
 |---|---|
-| `src/WhisperAloud.Core` | transcription (`WhisperTranscriber`, `VulkanDevices`), rewriting (`ClaudeCleaner`, `ClaudeProcess`, `CleanupPrompt`, stream-json protocol in `StreamJson`), settings (`WhisperAloudSettings`), data folders (`AppPaths`), latency log |
-| `src/WhisperAloud.App` | WinForms tray app: shortcuts (`Hotkey`, `RegisterHotKey`), start with Windows (`Autostart`), recording (`MicRecorder`, NAudio), pasting (`TextInjector`, `SendInput`), status window (`OverlayForm`), settings window (`SettingsForm`), dark theme (`Theme`, `ModernControls`) |
-| `tests/WhisperAloud.Core.Tests` | xUnit tests for the stream-json protocol, prompts, prompt lookup and CLI arguments |
+| `src/WhisperAloud.Core` | transcription (`WhisperTranscriber`, `VulkanDevices`, model download), saved recordings (`Recordings`, `AudioFile`), rewriting (`ClaudeCleaner`, `ClaudeProcess`, `CleanupPrompt`, stream-json protocol in `StreamJson`, sign-in check in `ClaudeAuth`), settings (`WhisperAloudSettings`), data folders (`AppPaths`), latency log |
+| `src/WhisperAloud.App` | WinForms tray app: shortcuts (`Hotkey`, `RegisterHotKey`), start with Windows (`Autostart`), recording (`MicRecorder`, NAudio), pasting (`TextInjector`, `SendInput`), status window (`OverlayForm`), settings window (`SettingsForm`), dark theme (`Theme`, `ModernControls`), app icon (`app.ico`, `TrayIcons`) |
+| `tests/WhisperAloud.Core.Tests` | xUnit tests for the stream-json protocol, prompts, prompt lookup, CLI arguments, saved recordings, the sign-in check and the download progress text |
 | `tools/WhisperAloud.Bench` | benchmark of the pipeline on audio files |
 | `samples` | three sentences synthesized with the Windows "Elsa" voice (for Whisper timing) and `trascrizioni.txt` (for rewriting quality and timing) |
 | `docs` | user documentation and its screenshots |
@@ -88,7 +88,7 @@ The workflow takes a couple of minutes; the release appears under **Releases** w
 dotnet test
 ```
 
-The tests cover the parts that do not need a microphone, a GPU or the `claude` CLI: message building and parsing, prompt handling and the CLI arguments. Add a test when you change any of them.
+The tests cover the parts that do not need a microphone, a GPU or the `claude` CLI: message building and parsing, prompt handling, the CLI arguments, saving and cleaning up recordings, reading the output of `claude auth status` and the download progress text. Add a test when you change any of them.
 
 ## Benchmark
 
